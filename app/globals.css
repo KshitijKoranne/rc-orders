@@ -1,0 +1,224 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f3ea;
+  --foreground: #2a2118;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+.panel {
+  border: 1px solid #eadfce;
+  border-radius: 8px;
+  background: #fffaf2;
+  padding: 18px;
+  box-shadow: 0 14px 40px rgba(83, 56, 29, 0.08);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  color: #6f5a45;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.field input,
+.field select,
+.field textarea,
+.search-input {
+  width: 100%;
+  border: 1px solid #dac6ad;
+  border-radius: 8px;
+  background: #fffdf8;
+  color: #2a2118;
+  outline: none;
+  padding: 11px 12px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.search-input:focus {
+  border-color: #8d5b28;
+  box-shadow: 0 0 0 3px rgba(141, 91, 40, 0.14);
+}
+
+.primary-button,
+.secondary-button {
+  align-items: center;
+  border-radius: 8px;
+  display: inline-flex;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 14px;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.primary-button {
+  background: #2f4a34;
+  color: #fffaf2;
+  width: 100%;
+}
+
+.secondary-button {
+  border: 1px solid #d8c5ae;
+  background: #ffffff;
+  color: #4b3726;
+}
+
+.primary-button:hover,
+.secondary-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(68, 42, 19, 0.12);
+}
+
+.text-button,
+.danger-button {
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.text-button {
+  color: #2f4a34;
+}
+
+.danger-button {
+  color: #9b3f1b;
+}
+
+.notice {
+  align-items: center;
+  background: #ecf3e8;
+  border: 1px solid #c9dfbf;
+  border-radius: 8px;
+  color: #2f4a34;
+  display: flex;
+  font-size: 14px;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.notice button {
+  color: #2f4a34;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.product-card {
+  align-items: flex-start;
+  background: #fffdf8;
+  border: 1px solid #eadfce;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.product-image {
+  aspect-ratio: 1;
+  background: #f4eadc;
+  border: 1px solid #decbb3;
+  border-radius: 8px;
+  color: #8d5b28;
+  display: grid;
+  flex: 0 0 64px;
+  font-size: 13px;
+  font-weight: 900;
+  height: 64px;
+  max-width: 100%;
+  object-fit: cover;
+  overflow: hidden;
+  place-items: center;
+  text-align: center;
+}
+
+.empty-image {
+  padding: 6px;
+}
+
+.chip {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.chip.pending,
+.chip.new {
+  background: #f6e5bc;
+  color: #79500e;
+}
+
+.chip.partial,
+.chip.in-progress {
+  background: #e2edf8;
+  color: #285174;
+}
+
+.chip.paid,
+.chip.ready,
+.chip.delivered {
+  background: #dcebd6;
+  color: #2f5b2c;
+}
+
+.chip.cancelled {
+  background: #f4d5cf;
+  color: #8c2f1b;
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: 14px;
+  }
+}
