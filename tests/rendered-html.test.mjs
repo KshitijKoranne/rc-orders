@@ -24,7 +24,13 @@ test("renders an empty Rithya Creations state without seeded data", async () => 
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
+  assert.match(html, /<title>Rithya Creations<\/title>/i);
   assert.match(html, /Rithya Creations/i);
+  assert.match(html, /New R-code/i);
+  assert.match(html, /New order/i);
+  assert.match(html, /Catalogue/i);
+  assert.match(html, /Orders/i);
   assert.match(html, /No orders found/i);
+  assert.doesNotMatch(html, /Save each candle|Keep images below|Auto-filled from R-code/);
   assert.doesNotMatch(html, /Aarti Sharma|Neha Patel|Lavender jar candle|Mogra floating candle set/);
 });

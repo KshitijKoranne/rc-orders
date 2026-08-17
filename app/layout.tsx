@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rithya Creations | Order Manager",
-  description: "Private order and product manager for Rithya Creations.",
+  title: "Rithya Creations",
+  description: "Rithya Creations order book.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

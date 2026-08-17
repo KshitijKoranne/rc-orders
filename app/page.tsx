@@ -1,6 +1,13 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 type PaymentStatus = "Pending" | "Partial" | "Paid";
 type OrderStatus = "New" | "In Progress" | "Ready" | "Delivered" | "Cancelled";
@@ -36,11 +43,11 @@ type Order = {
 
 type OrderForm = Omit<Order, "id" | "orderNo" | "createdAt">;
 type ProductForm = Omit<Product, "id" | "createdAt">;
+type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
 
 const ordersKey = "rithya-creation-orders-v2";
 const productsKey = "rithya-creation-products-v1";
 
-const paymentStatuses: PaymentStatus[] = ["Pending", "Partial", "Paid"];
 const orderStatuses: OrderStatus[] = [
   "New",
   "In Progress",
@@ -72,6 +79,13 @@ const initialProductForm: ProductForm = {
   image: "",
   notes: "",
 };
+
+const tabItems: Array<{ key: TabKey; label: string }> = [
+  { key: "new-r-code", label: "New R-code" },
+  { key: "new-order", label: "New order" },
+  { key: "catalogue", label: "Catalogue" },
+  { key: "orders", label: "Orders" },
+];
 
 function currency(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -154,6 +168,7 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
   const [isLoaded, setIsLoaded] = useState(false);
   const [notice, setNotice] = useState("");
+  const [activeTab, setActiveTab] = useState<TabKey>("orders");
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
@@ -283,28 +298,9 @@ export default function Home() {
     }
 
     if (editingProductId) {
-      const previousProduct = products.find((product) => product.id === editingProductId);
-      const previousRCode = previousProduct?.rCode || cleanProduct.rCode;
       setProducts((current) =>
         current.map((product) =>
           product.id === editingProductId ? { ...product, ...cleanProduct } : product,
-        ),
-      );
-      setOrders((current) =>
-        current.map((order) =>
-          order.rCode === previousRCode
-            ? {
-                ...order,
-                rCode: cleanProduct.rCode,
-                product: cleanProduct.name,
-                unitPrice: cleanProduct.price,
-                amount: cleanProduct.price * order.quantity,
-                paymentStatus: derivePaymentStatus(
-                  cleanProduct.price * order.quantity,
-                  order.paid,
-                ),
-              }
-            : order,
         ),
       );
     } else {
@@ -377,7 +373,7 @@ export default function Home() {
       notes: product.notes,
     });
     setEditingProductId(product.id);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setActiveTab("new-r-code");
   }
 
   function editOrder(order: Order) {
@@ -397,7 +393,7 @@ export default function Home() {
       notes: order.notes,
     });
     setEditingOrderId(order.id);
-    window.scrollTo({ top: 360, behavior: "smooth" });
+    setActiveTab("new-order");
   }
 
   function deleteProduct(id: string) {
@@ -412,6 +408,7 @@ export default function Home() {
   }
 
   function deleteOrder(id: string) {
+    if (!window.confirm("Delete this order?")) return;
     setOrders((current) => current.filter((order) => order.id !== id));
   }
 
@@ -521,73 +518,102 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
+  function handleTabKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    currentTab: TabKey,
+  ) {
+    const currentIndex = tabItems.findIndex((tab) => tab.key === currentTab);
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const nextIndex = (currentIndex + direction + tabItems.length) % tabItems.length;
+    setActiveTab(tabItems[nextIndex].key);
+    window.setTimeout(() => {
+      document.getElementById(`tab-${tabItems[nextIndex].key}`)?.focus();
+    }, 0);
+  }
+
   return (
-    <main className="min-h-screen bg-[#f8f3ea] text-[#2a2118]">
-      <section className="border-b border-[#e6d8c6] bg-[#fffaf2]">
-        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#8d5b28]">
-                Rithya Creations
-              </p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-5xl">
-                R-code order manager
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#6b5a48] sm:text-base">
-                Save each candle by R-code with image and price. Then enter the
-                R-code in an order and the amount is calculated automatically.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="secondary-button" onClick={exportCsv}>
-                Export CSV
-              </button>
-              <button className="secondary-button" onClick={backupJson}>
-                Backup
-              </button>
-              <label className="secondary-button cursor-pointer">
-                Restore
-                <input
-                  className="sr-only"
-                  type="file"
-                  accept="application/json"
-                  onChange={restoreJson}
-                />
-              </label>
-            </div>
+    <main className="app-shell">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <div className="brand-lockup">
+            <span className="brand-mark" aria-hidden="true">
+              RC
+            </span>
+            <h1>Rithya Creations</h1>
           </div>
-
-          {notice && (
-            <div className="notice" role="status">
-              {notice}
-              <button type="button" onClick={() => setNotice("")}>
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            <Metric label="R-codes" value={String(totals.catalogue)} />
-            <Metric label="Active orders" value={String(totals.count)} />
-            <Metric label="Order value" value={currency(totals.revenue)} />
-            <Metric label="Collected" value={currency(totals.collected)} />
-            <Metric label="Pending" value={currency(totals.pending)} tone="warn" />
-            <Metric label="Ready" value={String(totals.ready)} />
+          <div className="header-tools">
+            <button className="tool-button" onClick={exportCsv} type="button">
+              Export CSV
+            </button>
+            <button className="tool-button" onClick={backupJson} type="button">
+              Backup
+            </button>
+            <label className="tool-button file-trigger">
+              Restore
+              <input
+                className="sr-only"
+                type="file"
+                accept="application/json"
+                onChange={restoreJson}
+              />
+            </label>
           </div>
         </div>
-      </section>
+      </header>
 
-      <section className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[410px_1fr] lg:px-8">
-        <div className="space-y-5">
-          <form className="panel space-y-4" onSubmit={saveProduct}>
-            <div className="flex items-center justify-between gap-3">
+      <section className="workspace">
+        {notice && (
+          <div className="notice" role="status">
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice("")}>
+              Close
+            </button>
+          </div>
+        )}
+
+        <nav className="tab-nav" aria-label="Workspace sections" role="tablist">
+          {tabItems.map((tab) => (
+            <button
+              aria-controls={`panel-${tab.key}`}
+              aria-selected={activeTab === tab.key}
+              className={`tab-button ${activeTab === tab.key ? "active" : ""}`}
+              id={`tab-${tab.key}`}
+              key={tab.key}
+              onKeyDown={(event) => handleTabKeyDown(event, tab.key)}
+              onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              type="button"
+            >
+              <span>{tab.label}</span>
+              {tab.key === "catalogue" && <span className="tab-count">{products.length}</span>}
+              {tab.key === "orders" && <span className="tab-count">{orders.length}</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="metric-grid">
+          <Metric label="R-codes" value={String(totals.catalogue)} />
+          <Metric label="Active orders" value={String(totals.count)} />
+          <Metric label="Order value" value={currency(totals.revenue)} />
+          <Metric label="Collected" value={currency(totals.collected)} />
+          <Metric label="Pending" value={currency(totals.pending)} tone="warn" />
+          <Metric label="Ready" value={String(totals.ready)} />
+        </div>
+
+        {activeTab === "new-r-code" && (
+          <form
+            aria-labelledby="tab-new-r-code"
+            className="workspace-panel form-panel"
+            id="panel-new-r-code"
+            onSubmit={saveProduct}
+            role="tabpanel"
+          >
+            <div className="panel-heading">
               <div>
-                <h2 className="text-xl font-semibold">
-                  {editingProductId ? "Edit R-code" : "Add R-code"}
-                </h2>
-                <p className="text-sm text-[#756554]">
-                  One R-code, one product image, one controlled price.
-                </p>
+                <span className="section-kicker">Catalogue</span>
+                <h2>{editingProductId ? "Edit R-code" : "New R-code"}</h2>
               </div>
               {editingProductId && (
                 <button className="text-button" type="button" onClick={resetProductForm}>
@@ -596,7 +622,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="form-grid two-up">
               <div className="field">
                 <label htmlFor="catalogueRCode">R-code</label>
                 <input
@@ -632,11 +658,11 @@ export default function Home() {
                 required
                 value={productForm.name}
                 onChange={(event) => updateProductField("name", event.target.value)}
-                placeholder="Rose jar candle"
+                placeholder="Product name"
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[96px_1fr]">
+            <div className="photo-field">
               <ProductImage product={productForm} />
               <div className="field">
                 <label htmlFor="catalogueImage">Product photo</label>
@@ -646,9 +672,6 @@ export default function Home() {
                   accept="image/*"
                   onChange={uploadProductImage}
                 />
-                <p className="text-xs text-[#756554]">
-                  Keep images below 900 KB in this v1.
-                </p>
               </div>
             </div>
 
@@ -656,23 +679,34 @@ export default function Home() {
               <label htmlFor="catalogueNotes">Catalogue notes</label>
               <textarea
                 id="catalogueNotes"
-                rows={2}
+                rows={3}
                 value={productForm.notes}
                 onChange={(event) => updateProductField("notes", event.target.value)}
-                placeholder="Scent, size, packaging, stock note..."
+                placeholder="Notes"
               />
             </div>
 
-            <button className="primary-button" type="submit">
-              {editingProductId ? "Save R-code" : "Add R-code"}
-            </button>
+            <div className="form-actions">
+              <button className="primary-button" type="submit">
+                {editingProductId ? "Save R-code" : "Add R-code"}
+              </button>
+            </div>
           </form>
+        )}
 
-          <form className="panel space-y-4" onSubmit={saveOrder}>
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold">
-                {editingOrderId ? "Edit order" : "New order"}
-              </h2>
+        {activeTab === "new-order" && (
+          <form
+            aria-labelledby="tab-new-order"
+            className="workspace-panel form-panel"
+            id="panel-new-order"
+            onSubmit={saveOrder}
+            role="tabpanel"
+          >
+            <div className="panel-heading">
+              <div>
+                <span className="section-kicker">Orders</span>
+                <h2>{editingOrderId ? "Edit order" : "New order"}</h2>
+              </div>
               {editingOrderId && (
                 <button className="text-button" type="button" onClick={resetOrderForm}>
                   Cancel
@@ -680,210 +714,208 @@ export default function Home() {
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <div className="field">
-                <label htmlFor="orderRCode">R-code</label>
-                <input
-                  id="orderRCode"
-                  required
-                  list="rCodeList"
-                  value={orderForm.rCode}
-                  onBlur={(event) =>
-                    updateOrderField("rCode", normalizeRCode(event.target.value))
-                  }
-                  onChange={(event) => updateOrderField("rCode", event.target.value)}
-                  placeholder="R-0001"
-                />
-                <datalist id="rCodeList">
-                  {products.map((product) => (
-                    <option
-                      key={product.id}
-                      value={product.rCode}
-                      label={`${product.name} - ${currency(product.price)}`}
+            <div className="order-form-layout">
+              <div className="field-stack">
+                <div className="form-grid code-row">
+                  <div className="field">
+                    <label htmlFor="orderRCode">R-code</label>
+                    <input
+                      id="orderRCode"
+                      required
+                      list="rCodeList"
+                      value={orderForm.rCode}
+                      onBlur={(event) =>
+                        updateOrderField("rCode", normalizeRCode(event.target.value))
+                      }
+                      onChange={(event) => updateOrderField("rCode", event.target.value)}
+                      placeholder="R-0001"
                     />
-                  ))}
-                </datalist>
+                    <datalist id="rCodeList">
+                      {products.map((product) => (
+                        <option
+                          key={product.id}
+                          value={product.rCode}
+                          label={`${product.name} - ${currency(product.price)}`}
+                        />
+                      ))}
+                    </datalist>
+                  </div>
+                  <ProductImage product={selectedProduct} />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="customer">Customer name</label>
+                  <input
+                    id="customer"
+                    required
+                    value={orderForm.customer}
+                    onChange={(event) => updateOrderField("customer", event.target.value)}
+                    placeholder="Customer name"
+                  />
+                </div>
+
+                <div className="form-grid two-up">
+                  <div className="field">
+                    <label htmlFor="phone">Phone</label>
+                    <input
+                      id="phone"
+                      value={orderForm.phone}
+                      onChange={(event) => updateOrderField("phone", event.target.value)}
+                      placeholder="Mobile number"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="source">Source</label>
+                    <input
+                      id="source"
+                      value={orderForm.source}
+                      onChange={(event) => updateOrderField("source", event.target.value)}
+                      placeholder="WhatsApp"
+                    />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="product">Product</label>
+                  <input
+                    id="product"
+                    required
+                    value={orderForm.product}
+                    onChange={(event) => updateOrderField("product", event.target.value)}
+                    placeholder="Product name"
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="notes">Notes</label>
+                  <textarea
+                    id="notes"
+                    rows={4}
+                    value={orderForm.notes}
+                    onChange={(event) => updateOrderField("notes", event.target.value)}
+                    placeholder="Notes"
+                  />
+                </div>
               </div>
-              <ProductImage product={selectedProduct} />
+
+              <div className="field-stack order-side">
+                <div className="form-grid two-up">
+                  <div className="field">
+                    <label htmlFor="quantity">Qty</label>
+                    <input
+                      id="quantity"
+                      min="1"
+                      type="number"
+                      value={orderForm.quantity}
+                      onChange={(event) =>
+                        updateOrderField("quantity", Number(event.target.value))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="unitPrice">Rate</label>
+                    <input id="unitPrice" readOnly value={orderForm.unitPrice} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="amount">Amount</label>
+                    <input
+                      id="amount"
+                      min="0"
+                      type="number"
+                      value={orderForm.amount}
+                      onChange={(event) =>
+                        updateOrderField("amount", Number(event.target.value))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="paid">Paid</label>
+                    <input
+                      id="paid"
+                      min="0"
+                      type="number"
+                      value={orderForm.paid}
+                      onChange={(event) =>
+                        updateOrderField("paid", Number(event.target.value))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="form-grid two-up">
+                  <div className="field">
+                    <span className="field-label">Payment</span>
+                    <div className="value-field">
+                      <Chip label={orderForm.paymentStatus} />
+                    </div>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="orderStatus">Order status</label>
+                    <select
+                      id="orderStatus"
+                      value={orderForm.orderStatus}
+                      onChange={(event) =>
+                        updateOrderField("orderStatus", event.target.value as OrderStatus)
+                      }
+                    >
+                      {orderStatuses.map((status) => (
+                        <option key={status}>{status}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="dueDate">Due date</label>
+                  <input
+                    id="dueDate"
+                    type="date"
+                    value={orderForm.dueDate}
+                    onChange={(event) => updateOrderField("dueDate", event.target.value)}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="field">
-              <label htmlFor="customer">Customer name</label>
-              <input
-                id="customer"
-                required
-                value={orderForm.customer}
-                onChange={(event) => updateOrderField("customer", event.target.value)}
-                placeholder="Customer name"
-              />
+            <div className="form-actions">
+              <button className="primary-button" type="submit">
+                {editingOrderId ? "Save order" : "Add order"}
+              </button>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              <div className="field">
-                <label htmlFor="phone">Phone</label>
-                <input
-                  id="phone"
-                  value={orderForm.phone}
-                  onChange={(event) => updateOrderField("phone", event.target.value)}
-                  placeholder="Mobile number"
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="source">Source</label>
-                <input
-                  id="source"
-                  value={orderForm.source}
-                  onChange={(event) => updateOrderField("source", event.target.value)}
-                  placeholder="WhatsApp"
-                />
-              </div>
-            </div>
-
-            <div className="field">
-              <label htmlFor="product">Product</label>
-              <input
-                id="product"
-                required
-                value={orderForm.product}
-                onChange={(event) => updateOrderField("product", event.target.value)}
-                placeholder="Auto-filled from R-code"
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="field">
-                <label htmlFor="quantity">Qty</label>
-                <input
-                  id="quantity"
-                  min="1"
-                  type="number"
-                  value={orderForm.quantity}
-                  onChange={(event) =>
-                    updateOrderField("quantity", Number(event.target.value))
-                  }
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="unitPrice">Rate</label>
-                <input id="unitPrice" readOnly value={orderForm.unitPrice} />
-              </div>
-              <div className="field">
-                <label htmlFor="amount">Amount</label>
-                <input
-                  id="amount"
-                  min="0"
-                  type="number"
-                  value={orderForm.amount}
-                  onChange={(event) =>
-                    updateOrderField("amount", Number(event.target.value))
-                  }
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="paid">Paid</label>
-                <input
-                  id="paid"
-                  min="0"
-                  type="number"
-                  value={orderForm.paid}
-                  onChange={(event) =>
-                    updateOrderField("paid", Number(event.target.value))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="field">
-                <label htmlFor="paymentStatus">Payment</label>
-                <select
-                  id="paymentStatus"
-                  value={orderForm.paymentStatus}
-                  onChange={(event) =>
-                    updateOrderField(
-                      "paymentStatus",
-                      event.target.value as PaymentStatus,
-                    )
-                  }
-                >
-                  {paymentStatuses.map((status) => (
-                    <option key={status}>{status}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="orderStatus">Order status</label>
-                <select
-                  id="orderStatus"
-                  value={orderForm.orderStatus}
-                  onChange={(event) =>
-                    updateOrderField("orderStatus", event.target.value as OrderStatus)
-                  }
-                >
-                  {orderStatuses.map((status) => (
-                    <option key={status}>{status}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="field">
-              <label htmlFor="dueDate">Due date</label>
-              <input
-                id="dueDate"
-                type="date"
-                value={orderForm.dueDate}
-                onChange={(event) => updateOrderField("dueDate", event.target.value)}
-              />
-            </div>
-
-            <div className="field">
-              <label htmlFor="notes">Notes</label>
-              <textarea
-                id="notes"
-                rows={3}
-                value={orderForm.notes}
-                onChange={(event) => updateOrderField("notes", event.target.value)}
-                placeholder="Packaging, delivery, scent, custom request..."
-              />
-            </div>
-
-            <button className="primary-button" type="submit">
-              {editingOrderId ? "Save order" : "Add order"}
-            </button>
           </form>
-        </div>
+        )}
 
-        <div className="space-y-5 min-w-0">
-          <section className="panel min-w-0">
-            <div className="flex items-center justify-between gap-3 border-b border-[#eadfce] pb-4">
+        {activeTab === "catalogue" && (
+          <section
+            aria-labelledby="tab-catalogue"
+            className="workspace-panel content-panel"
+            id="panel-catalogue"
+            role="tabpanel"
+          >
+            <div className="panel-heading">
               <div>
-                <h2 className="text-xl font-semibold">R-code catalogue</h2>
-                <p className="text-sm text-[#756554]">
-                  {products.length} products saved
-                </p>
+                <span className="section-kicker">Catalogue</span>
+                <h2>R-codes</h2>
               </div>
+              <span className="panel-count">{products.length}</span>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <div className="product-grid">
               {products.map((product) => (
                 <article className="product-card" key={product.id}>
                   <ProductImage product={product} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
+                  <div className="product-card-body">
+                    <div className="product-card-topline">
                       <div>
-                        <p className="text-sm font-bold text-[#8d5b28]">
-                          {product.rCode}
-                        </p>
-                        <h3 className="font-semibold">{product.name}</h3>
+                        <p className="code-label">{product.rCode}</p>
+                        <h3>{product.name}</h3>
                       </div>
-                      <p className="font-semibold">{currency(product.price)}</p>
+                      <p className="product-price">{currency(product.price)}</p>
                     </div>
-                    {product.notes && (
-                      <p className="mt-1 text-sm text-[#756554]">{product.notes}</p>
-                    )}
-                    <div className="mt-3 flex gap-3">
+                    {product.notes && <p className="product-notes">{product.notes}</p>}
+                    <div className="inline-actions">
                       <button
+                        aria-label={`Edit ${product.rCode}`}
                         className="text-button"
                         type="button"
                         onClick={() => editProduct(product)}
@@ -891,6 +923,7 @@ export default function Home() {
                         Edit
                       </button>
                       <button
+                        aria-label={`Delete ${product.rCode}`}
                         className="danger-button"
                         type="button"
                         onClick={() => deleteProduct(product.id)}
@@ -902,25 +935,31 @@ export default function Home() {
                 </article>
               ))}
             </div>
+            {!products.length && <EmptyState text="No R-codes yet" />}
           </section>
+        )}
 
-          <section className="panel min-w-0">
-            <div className="flex flex-col gap-3 border-b border-[#eadfce] pb-4 md:flex-row md:items-center md:justify-between">
+        {activeTab === "orders" && (
+          <section
+            aria-labelledby="tab-orders"
+            className="workspace-panel content-panel"
+            id="panel-orders"
+            role="tabpanel"
+          >
+            <div className="panel-heading orders-heading">
               <div>
-                <h2 className="text-xl font-semibold">Orders</h2>
-                <p className="text-sm text-[#756554]">
-                  {visibleOrders.length} shown from {orders.length} total
-                </p>
+                <span className="section-kicker">Order book</span>
+                <h2>Orders</h2>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="list-controls">
                 <input
                   className="search-input"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search R-code, customer, phone"
+                  placeholder="Search orders"
                 />
                 <select
-                  className="search-input sm:w-40"
+                  className="search-input filter-select"
                   value={statusFilter}
                   onChange={(event) =>
                     setStatusFilter(event.target.value as "All" | OrderStatus)
@@ -934,22 +973,23 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-4 hidden overflow-x-auto xl:block">
-              <table className="w-full min-w-[980px] text-left text-sm">
-                <thead className="text-xs uppercase tracking-[0.12em] text-[#80684f]">
+            <div className="orders-table-wrap">
+              <table className="orders-table">
+                <caption className="sr-only">Orders</caption>
+                <thead>
                   <tr>
-                    <th className="py-3">Order</th>
-                    <th>R-code</th>
-                    <th>Customer</th>
-                    <th>Product</th>
-                    <th>Amount</th>
-                    <th>Payment</th>
-                    <th>Status</th>
-                    <th>Due</th>
-                    <th className="text-right">Action</th>
+                    <th scope="col">Order</th>
+                    <th scope="col">R-code</th>
+                    <th scope="col">Customer</th>
+                    <th scope="col">Product</th>
+                    <th scope="col">Amount</th>
+                    <th scope="col">Payment</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Due</th>
+                    <th className="align-right" scope="col">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#eadfce]">
+                <tbody>
                   {visibleOrders.map((order) => (
                     <OrderRow
                       key={order.id}
@@ -963,7 +1003,7 @@ export default function Home() {
               </table>
             </div>
 
-            <div className="mt-4 grid gap-3 xl:hidden">
+            <div className="order-cards">
               {visibleOrders.map((order) => (
                 <OrderCard
                   key={order.id}
@@ -975,13 +1015,9 @@ export default function Home() {
               ))}
             </div>
 
-            {!visibleOrders.length && (
-              <div className="rounded-lg border border-dashed border-[#d6c4ad] p-8 text-center text-[#756554]">
-                No orders found. Add one from the form or change the filters.
-              </div>
-            )}
+            {!visibleOrders.length && <EmptyState text="No orders found" />}
           </section>
-        </div>
+        )}
       </section>
     </main>
   );
@@ -997,17 +1033,9 @@ function Metric({
   tone?: "warn";
 }) {
   return (
-    <article className="rounded-lg border border-[#eadfce] bg-white px-4 py-3 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#8d735c]">
-        {label}
-      </p>
-      <p
-        className={`mt-2 text-2xl font-semibold ${
-          tone === "warn" ? "text-[#9b3f1b]" : "text-[#2a2118]"
-        }`}
-      >
-        {value}
-      </p>
+    <article className={`metric-card ${tone === "warn" ? "warn" : ""}`}>
+      <p className="metric-label">{label}</p>
+      <p className="metric-value">{value}</p>
     </article>
   );
 }
@@ -1039,41 +1067,47 @@ function OrderRow({
 }) {
   const balance = Math.max(order.amount - order.paid, 0);
   return (
-    <tr className="align-top">
-      <td className="py-4 font-semibold">{order.orderNo}</td>
-      <td className="py-4">
-        <div className="flex items-center gap-2">
+    <tr className="order-row">
+      <td className="strong-cell">{order.orderNo}</td>
+      <td>
+        <div className="order-code-cell">
           <ProductImage product={{ image, rCode: order.rCode }} />
-          <span className="font-semibold text-[#8d5b28]">{order.rCode}</span>
+          <span className="code-label">{order.rCode}</span>
         </div>
       </td>
-      <td className="py-4">
-        <p className="font-medium">{order.customer}</p>
-        <p className="text-xs text-[#756554]">{order.phone || "No phone"}</p>
+      <td>
+        <p className="strong-cell">{order.customer}</p>
+        <p className="muted-line">{order.phone || "No phone"}</p>
       </td>
-      <td className="py-4">
+      <td>
         <p>{order.product}</p>
-        <p className="text-xs text-[#756554]">
+        <p className="muted-line">
           Qty {order.quantity} x {currency(order.unitPrice)} via {order.source}
         </p>
       </td>
-      <td className="py-4">
-        <p className="font-semibold">{currency(order.amount)}</p>
-        <p className="text-xs text-[#9b3f1b]">Balance {currency(balance)}</p>
+      <td>
+        <p className="strong-cell">{currency(order.amount)}</p>
+        <p className="balance-line">Balance {currency(balance)}</p>
       </td>
-      <td className="py-4">
+      <td>
         <Chip label={order.paymentStatus} />
       </td>
-      <td className="py-4">
+      <td>
         <Chip label={order.orderStatus} />
       </td>
-      <td className="py-4">{order.dueDate || "-"}</td>
-      <td className="py-4 text-right">
-        <button className="text-button" type="button" onClick={() => onEdit(order)}>
+      <td>{order.dueDate || "-"}</td>
+      <td className="align-right">
+        <button
+          aria-label={`Edit order ${order.orderNo}`}
+          className="text-button"
+          type="button"
+          onClick={() => onEdit(order)}
+        >
           Edit
         </button>
         <button
-          className="danger-button ml-3"
+          aria-label={`Delete order ${order.orderNo}`}
+          className="danger-button action-spaced"
           type="button"
           onClick={() => onDelete(order.id)}
         >
@@ -1097,36 +1131,42 @@ function OrderCard({
 }) {
   const balance = Math.max(order.amount - order.paid, 0);
   return (
-    <article className="rounded-lg border border-[#eadfce] bg-[#fffdf8] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex gap-3">
+    <article className="order-card">
+      <div className="order-card-heading">
+        <div className="order-card-identity">
           <ProductImage product={{ image, rCode: order.rCode }} />
           <div>
-            <p className="text-sm font-semibold text-[#8d5b28]">
+            <p className="code-label">
               {order.orderNo} | {order.rCode}
             </p>
-            <h3 className="text-lg font-semibold">{order.customer}</h3>
-            <p className="text-sm text-[#756554]">{order.phone || "No phone"}</p>
+            <h3>{order.customer}</h3>
+            <p className="muted-line">{order.phone || "No phone"}</p>
           </div>
         </div>
         <Chip label={order.orderStatus} />
       </div>
-      <p className="mt-3 font-medium">{order.product}</p>
-      <p className="mt-1 text-sm text-[#756554]">
+      <p className="order-product">{order.product}</p>
+      <p className="muted-line">
         Qty {order.quantity} x {currency(order.unitPrice)} | {order.source} | Due{" "}
         {order.dueDate || "-"}
       </p>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+      <div className="mini-stat-grid">
         <MiniStat label="Amount" value={currency(order.amount)} />
         <MiniStat label="Paid" value={currency(order.paid)} />
         <MiniStat label="Balance" value={currency(balance)} />
       </div>
-      {order.notes && <p className="mt-3 text-sm text-[#6b5a48]">{order.notes}</p>}
-      <div className="mt-4 flex gap-3">
-        <button className="text-button" type="button" onClick={() => onEdit(order)}>
+      {order.notes && <p className="order-notes">{order.notes}</p>}
+      <div className="inline-actions">
+        <button
+          aria-label={`Edit order ${order.orderNo}`}
+          className="text-button"
+          type="button"
+          onClick={() => onEdit(order)}
+        >
           Edit
         </button>
         <button
+          aria-label={`Delete order ${order.orderNo}`}
           className="danger-button"
           type="button"
           onClick={() => onDelete(order.id)}
@@ -1140,11 +1180,9 @@ function OrderCard({
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-[#f4eadc] p-2">
-      <p className="text-[11px] uppercase tracking-[0.1em] text-[#80684f]">
-        {label}
-      </p>
-      <p className="mt-1 font-semibold">{value}</p>
+    <div className="mini-stat">
+      <p className="mini-stat-label">{label}</p>
+      <p className="mini-stat-value">{value}</p>
     </div>
   );
 }
@@ -1155,4 +1193,8 @@ function Chip({ label }: { label: string }) {
       {label}
     </span>
   );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="empty-state">{text}</div>;
 }
