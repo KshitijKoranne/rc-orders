@@ -6,6 +6,7 @@ import {
   KeyboardEvent as ReactKeyboardEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -764,28 +765,21 @@ export default function Home() {
                 <div className="form-grid code-row">
                   <div className="field">
                     <label htmlFor="orderRCode">R-code</label>
-                    <input
-                      id="orderRCode"
-                      required
-                      list="rCodeList"
+                    <RCodePicker
+                      products={products}
                       value={orderForm.rCode}
-                      onBlur={(event) =>
-                        updateOrderField("rCode", normalizeRCode(event.target.value))
-                      }
-                      onChange={(event) => updateOrderField("rCode", event.target.value)}
-                      placeholder="R-0001"
+                      onChange={(value) => updateOrderField("rCode", value)}
+                      onCreateProduct={() => setActiveTab("new-r-code")}
                     />
-                    <datalist id="rCodeList">
-                      {products.map((product) => (
-                        <option
-                          key={product.id}
-                          value={product.rCode}
-                          label={`${product.name} - ${currency(product.price)}`}
-                        />
-                      ))}
-                    </datalist>
                   </div>
-                  <ProductImage product={selectedProduct} />
+                  <div className={`selected-product-card ${selectedProduct ? "" : "empty"}`}>
+                    <ProductImage product={selectedProduct} />
+                    <div>
+                      <span className="selected-product-label">Selected item</span>
+                      <strong>{selectedProduct?.name || "Choose an R-code"}</strong>
+                      {selectedProduct && <span>{currency(selectedProduct.price)}</span>}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="field">
@@ -828,9 +822,10 @@ export default function Home() {
                   <input
                     id="product"
                     required
+                    readOnly={Boolean(selectedProduct)}
                     value={orderForm.product}
                     onChange={(event) => updateOrderField("product", event.target.value)}
-                    placeholder="Product name"
+                    placeholder="Choose an R-code first"
                   />
                 </div>
 
@@ -1096,13 +1091,173 @@ function ProductImage({ product }: { product?: Pick<Product, "image" | "rCode"> 
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        alt={product.rCode ? `${product.rCode} candle` : "Selected candle"}
+        alt={product.rCode ? `${product.rCode} product` : "Selected product"}
         className="product-image"
         src={product.image}
       />
     );
   }
   return <div className="product-image empty-image">{product?.rCode || "R"}</div>;
+}
+
+function RCodePicker({
+  products,
+  value,
+  onChange,
+  onCreateProduct,
+}: {
+  products: Product[];
+  value: string;
+  onChange: (value: string) => void;
+  onCreateProduct: () => void;
+}) {
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const selectedCode = normalizeRCode(value);
+  const searchTerm = search.trim().toLowerCase();
+  const filteredProducts = products.filter((product) => {
+    if (!searchTerm) return true;
+    return [product.rCode, product.name].some((field) =>
+      field.toLowerCase().includes(searchTerm),
+    );
+  });
+  const selectedIndex = Math.max(
+    0,
+    filteredProducts.findIndex((product) => product.rCode === selectedCode),
+  );
+  const previewProduct = filteredProducts[highlightedIndex] || filteredProducts[selectedIndex];
+
+  function openPicker() {
+    setIsOpen(true);
+    setHighlightedIndex(selectedIndex);
+  }
+
+  function chooseProduct(product: Product) {
+    onChange(product.rCode);
+    setSearch("");
+    setHighlightedIndex(0);
+    setIsOpen(false);
+  }
+
+  function handleBlur() {
+    window.setTimeout(() => {
+      if (!pickerRef.current?.contains(document.activeElement)) setIsOpen(false);
+    }, 0);
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsOpen(false);
+      return;
+    }
+    if (!filteredProducts.length) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setIsOpen(true);
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) =>
+        Math.min(Math.max(current + direction, 0), filteredProducts.length - 1),
+      );
+    }
+    if (event.key === "Enter" && isOpen && previewProduct) {
+      event.preventDefault();
+      chooseProduct(previewProduct);
+    }
+  }
+
+  return (
+    <div className="rcode-picker" ref={pickerRef}>
+      <div className="rcode-input-wrap">
+        <input
+          aria-activedescendant={
+            isOpen && previewProduct ? `rcode-option-${previewProduct.id}` : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls="rcode-options"
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
+          autoComplete="off"
+          id="orderRCode"
+          onBlur={handleBlur}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            onChange(event.target.value);
+            setIsOpen(true);
+            setHighlightedIndex(0);
+          }}
+          onFocus={openPicker}
+          onKeyDown={handleKeyDown}
+          placeholder={products.length ? "Search by R-code or item" : "Add an R-code first"}
+          required
+          role="combobox"
+          value={value}
+        />
+        <button
+          aria-label="Show all R-codes"
+          aria-expanded={isOpen}
+          className="rcode-toggle"
+          onClick={() => (isOpen ? setIsOpen(false) : openPicker())}
+          type="button"
+        >
+          <span aria-hidden="true">⌄</span>
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="rcode-menu">
+          {previewProduct && (
+            <div className="rcode-preview" aria-live="polite">
+              <ProductImage product={previewProduct} />
+              <div className="rcode-preview-copy">
+                <span className="selected-product-label">Preview</span>
+                <strong>{previewProduct.rCode}</strong>
+                <span>{previewProduct.name}</span>
+                <b>{currency(previewProduct.price)}</b>
+              </div>
+            </div>
+          )}
+
+          {filteredProducts.length ? (
+            <div aria-label="Available R-codes" className="rcode-option-list" id="rcode-options" role="listbox">
+              {filteredProducts.map((product, index) => (
+                <button
+                  aria-selected={product.rCode === selectedCode}
+                  className={`rcode-option ${previewProduct?.id === product.id ? "highlighted" : ""}`}
+                  id={`rcode-option-${product.id}`}
+                  key={product.id}
+                  onClick={() => chooseProduct(product)}
+                  onFocus={() => setHighlightedIndex(index)}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  role="option"
+                  type="button"
+                >
+                  <span>
+                    <strong>{product.rCode}</strong>
+                    <small>{product.name}</small>
+                  </span>
+                  <b>{currency(product.price)}</b>
+                </button>
+              ))}
+            </div>
+          ) : products.length ? (
+            <p className="rcode-empty">No R-codes match “{search}”.</p>
+          ) : (
+            <div className="rcode-empty">
+              <strong>No R-codes yet</strong>
+              <span>Add the item to your catalogue first.</span>
+              <button className="text-button" onClick={onCreateProduct} type="button">
+                Add an R-code
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function OrderRow({
