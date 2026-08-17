@@ -316,6 +316,36 @@ label:has(input:focus-visible) {
   width: 34px;
 }
 
+.sync-status {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 7px;
+  letter-spacing: 0.08em;
+  margin-left: auto;
+  text-transform: uppercase;
+}
+
+.sync-status::before {
+  background: currentColor;
+  border-radius: 50%;
+  content: "";
+  display: inline-block;
+  height: 7px;
+  width: 7px;
+}
+
+.sync-status.connected {
+  color: var(--olive);
+}
+
+.sync-status.offline {
+  color: var(--warn);
+}
+
 .header-tools,
 .inline-actions,
 .list-controls {
@@ -950,6 +980,11 @@ label:has(input:focus-visible) {
     width: 100%;
   }
 
+  .sync-status {
+    margin-left: 0;
+    margin-top: -6px;
+  }
+
   .tool-button {
     flex: 1;
   }
@@ -1009,6 +1044,69 @@ label:has(input:focus-visible) {
   .filter-select {
     min-width: 0;
     width: 100%;
+  }
+
+  .form-actions .primary-button {
+    min-height: 46px;
+    width: 100%;
+  }
+
+  .code-row {
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header-inner,
+  .workspace {
+    width: min(100% - 22px, 1180px);
+  }
+
+  .brand-lockup h1 {
+    font-size: 17px;
+  }
+
+  .header-tools {
+    gap: 6px;
+  }
+
+  .tool-button {
+    font-size: 12px;
+    min-height: 42px;
+    padding: 8px 6px;
+  }
+
+  .tab-nav {
+    gap: 15px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-button {
+    flex: 0 0 auto;
+  }
+
+  .metric-card {
+    min-height: 68px;
+  }
+
+  .order-card,
+  .workspace-panel {
+    padding: 14px;
+  }
+
+  .product-image {
+    height: 66px;
+    width: 66px;
+  }
+
+  .code-row .product-image {
+    height: 72px;
+    width: 72px;
   }
 }
 

@@ -11,10 +11,11 @@ Private, single-user order and product manager for Rithya Creations.
 
 ## Data and access
 
-This version deliberately has no login and no server database. Products and
-orders are stored in the browser's local storage, which fits the current
-single-user workflow. Use **Backup** regularly and keep the JSON file somewhere
-safe; clearing browser storage removes the local copy.
+There is no login because this is a private, single-user workspace. Products
+and orders are stored in PostgreSQL on the VPS through the `DATABASE_URL`
+environment variable. The application creates its two tables on first use and
+keeps the database private on Coolify's internal network. Use **Backup** to
+download an additional JSON copy before making a large change.
 
 Because customer details can include phone numbers, keep the VPS route private
 with a VPN, IP allowlist, or reverse-proxy access control if the app is reachable
@@ -32,8 +33,9 @@ npm run dev
 ## Production
 
 The included Dockerfile runs the locked install, builds the Vinext application,
-and starts it on port `3000`. Coolify can deploy this repository directly from
-the `main` branch.
+and starts it on port `3000`. Coolify deploys this repository from the `main`
+branch alongside a persistent PostgreSQL service. Set `DATABASE_URL` on the
+application before the first deploy.
 
 Useful checks:
 

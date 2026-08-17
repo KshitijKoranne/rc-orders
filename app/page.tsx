@@ -45,9 +45,6 @@ type OrderForm = Omit<Order, "id" | "orderNo" | "createdAt">;
 type ProductForm = Omit<Product, "id" | "createdAt">;
 type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
 
-const ordersKey = "rithya-creation-orders-v2";
-const productsKey = "rithya-creation-products-v1";
-
 const orderStatuses: OrderStatus[] = [
   "New",
   "In Progress",
@@ -147,16 +144,6 @@ function migrateOrder(raw: Partial<Order>): Order {
   };
 }
 
-function parseStoredArray<T>(value: string | null, fallback: T[]): T[] {
-  if (!value) return fallback;
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export default function Home() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -167,27 +154,71 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
   const [isLoaded, setIsLoaded] = useState(false);
+  const [databaseConnected, setDatabaseConnected] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState(false);
   const [notice, setNotice] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("orders");
 
   useEffect(() => {
-    const loadTimer = window.setTimeout(() => {
-      const savedProducts = window.localStorage.getItem(productsKey);
-      const savedOrders = window.localStorage.getItem(ordersKey);
+    let active = true;
 
-      setProducts(parseStoredArray<Product>(savedProducts, []));
-      setOrders(parseStoredArray<Partial<Order>>(savedOrders, []).map(migrateOrder));
-      setIsLoaded(true);
-    }, 0);
+    async function loadRecords() {
+      try {
+        const response = await fetch("/api/records", { cache: "no-store" });
+        if (!response.ok) throw new Error("Database unavailable");
+        const payload = (await response.json()) as {
+          products?: Product[];
+          orders?: Partial<Order>[];
+        };
+        if (!Array.isArray(payload.products) || !Array.isArray(payload.orders)) {
+          throw new Error("Invalid records response");
+        }
+        if (!active) return;
+        setProducts(payload.products);
+        setOrders(payload.orders.map(migrateOrder));
+        setDatabaseConnected(true);
+        setSyncError(false);
+      } catch {
+        if (!active) return;
+        setProducts([]);
+        setOrders([]);
+        setDatabaseConnected(false);
+        setSyncError(false);
+        setNotice("Database unavailable. Changes will not be saved.");
+      } finally {
+        if (active) setIsLoaded(true);
+      }
+    }
 
-    return () => window.clearTimeout(loadTimer);
+    loadRecords();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (!isLoaded) return;
-    window.localStorage.setItem(ordersKey, JSON.stringify(orders));
-    window.localStorage.setItem(productsKey, JSON.stringify(products));
-  }, [isLoaded, orders, products]);
+    if (!isLoaded || !databaseConnected) return;
+    const saveTimer = window.setTimeout(async () => {
+      setIsSyncing(true);
+      setSyncError(false);
+      try {
+        const response = await fetch("/api/records", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ products, orders }),
+        });
+        if (!response.ok) throw new Error("Could not save records");
+      } catch {
+        setSyncError(true);
+        setNotice("Could not save changes to the database.");
+      } finally {
+        setIsSyncing(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [databaseConnected, isLoaded, orders, products]);
 
   const productByCode = useMemo(() => {
     return new Map(products.map((product) => [product.rCode, product]));
@@ -543,6 +574,20 @@ export default function Home() {
             </span>
             <h1>Rithya Creations</h1>
           </div>
+          <span
+            aria-live="polite"
+            className={`sync-status ${databaseConnected ? "connected" : "offline"}`}
+          >
+            {isLoaded
+              ? isSyncing
+                ? "Saving"
+                : syncError
+                  ? "Save failed"
+                  : databaseConnected
+                    ? "Saved"
+                    : "Offline"
+              : "Connecting"}
+          </span>
           <div className="header-tools">
             <button className="tool-button" onClick={exportCsv} type="button">
               Export CSV
@@ -747,6 +792,7 @@ export default function Home() {
                   <label htmlFor="customer">Customer name</label>
                   <input
                     id="customer"
+                    autoComplete="name"
                     required
                     value={orderForm.customer}
                     onChange={(event) => updateOrderField("customer", event.target.value)}
@@ -759,6 +805,8 @@ export default function Home() {
                     <label htmlFor="phone">Phone</label>
                     <input
                       id="phone"
+                      autoComplete="tel"
+                      inputMode="tel"
                       value={orderForm.phone}
                       onChange={(event) => updateOrderField("phone", event.target.value)}
                       placeholder="Mobile number"
@@ -804,6 +852,7 @@ export default function Home() {
                     <label htmlFor="quantity">Qty</label>
                     <input
                       id="quantity"
+                      inputMode="numeric"
                       min="1"
                       type="number"
                       value={orderForm.quantity}
@@ -814,12 +863,13 @@ export default function Home() {
                   </div>
                   <div className="field">
                     <label htmlFor="unitPrice">Rate</label>
-                    <input id="unitPrice" readOnly value={orderForm.unitPrice} />
+                    <input id="unitPrice" inputMode="numeric" readOnly value={orderForm.unitPrice} />
                   </div>
                   <div className="field">
                     <label htmlFor="amount">Amount</label>
                     <input
                       id="amount"
+                      inputMode="numeric"
                       min="0"
                       type="number"
                       value={orderForm.amount}
@@ -832,6 +882,7 @@ export default function Home() {
                     <label htmlFor="paid">Paid</label>
                     <input
                       id="paid"
+                      inputMode="numeric"
                       min="0"
                       type="number"
                       value={orderForm.paid}
