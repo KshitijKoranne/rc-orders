@@ -6,7 +6,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build:vps
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
