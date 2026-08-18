@@ -42,8 +42,17 @@ type Order = {
   createdAt: string;
 };
 
-type OrderForm = Omit<Order, "id" | "orderNo" | "createdAt">;
-type ProductForm = Omit<Product, "id" | "createdAt">;
+type NumericInput = number | "";
+type OrderForm = Omit<
+  Order,
+  "id" | "orderNo" | "createdAt" | "unitPrice" | "quantity" | "amount" | "paid"
+> & {
+  unitPrice: NumericInput;
+  quantity: NumericInput;
+  amount: NumericInput;
+  paid: NumericInput;
+};
+type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
 type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
 
 const orderStatuses: OrderStatus[] = [
@@ -94,6 +103,12 @@ function currency(value: number) {
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(Number(value) || 0);
+}
+
+function numericInputValue(value: string): NumericInput {
+  if (!value) return "";
+  const number = Number(value);
+  return Number.isFinite(number) ? number : "";
 }
 
 function makeId(prefix: string) {
@@ -745,7 +760,7 @@ export default function Home() {
                   type="number"
                   value={productForm.price}
                   onChange={(event) =>
-                    updateProductField("price", Number(event.target.value))
+                    updateProductField("price", numericInputValue(event.target.value))
                   }
                 />
               </div>
@@ -906,7 +921,7 @@ export default function Home() {
                       type="number"
                       value={orderForm.quantity}
                       onChange={(event) =>
-                        updateOrderField("quantity", Number(event.target.value))
+                        updateOrderField("quantity", numericInputValue(event.target.value))
                       }
                     />
                   </div>
@@ -923,7 +938,7 @@ export default function Home() {
                       type="number"
                       value={orderForm.amount}
                       onChange={(event) =>
-                        updateOrderField("amount", Number(event.target.value))
+                        updateOrderField("amount", numericInputValue(event.target.value))
                       }
                     />
                   </div>
@@ -936,7 +951,7 @@ export default function Home() {
                       type="number"
                       value={orderForm.paid}
                       onChange={(event) =>
-                        updateOrderField("paid", Number(event.target.value))
+                        updateOrderField("paid", numericInputValue(event.target.value))
                       }
                     />
                   </div>
