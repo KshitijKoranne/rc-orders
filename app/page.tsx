@@ -230,6 +230,9 @@ export default function Home() {
   const [syncError, setSyncError] = useState(false);
   const [notice, setNotice] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("orders");
+  const [isDirty, setIsDirty] = useState(false);
+  const [isPreparingImage, setIsPreparingImage] = useState(false);
+  const imageUploadIdRef = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -269,7 +272,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!isLoaded || !databaseConnected) return;
+    if (!isLoaded || !databaseConnected || !isDirty) return;
     const saveTimer = window.setTimeout(async () => {
       setIsSyncing(true);
       setSyncError(false);
@@ -289,7 +292,7 @@ export default function Home() {
     }, 250);
 
     return () => window.clearTimeout(saveTimer);
-  }, [databaseConnected, isLoaded, orders, products]);
+  }, [databaseConnected, isDirty, isLoaded, orders, products]);
 
   const productByCode = useMemo(() => {
     return new Map(products.map((product) => [product.rCode, product]));
@@ -371,13 +374,15 @@ export default function Home() {
   }
 
   function resetProductForm() {
+    imageUploadIdRef.current += 1;
+    setIsPreparingImage(false);
     setProductForm(initialProductForm);
     setEditingProductId(null);
   }
 
   function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const cleanProduct: ProductForm = {
+    const cleanProduct = {
       ...productForm,
       rCode: normalizeRCode(productForm.rCode),
       name: productForm.name.trim(),
@@ -400,12 +405,14 @@ export default function Home() {
     }
 
     if (editingProductId) {
+      setIsDirty(true);
       setProducts((current) =>
         current.map((product) =>
           product.id === editingProductId ? { ...product, ...cleanProduct } : product,
         ),
       );
     } else {
+      setIsDirty(true);
       setProducts((current) => [
         {
           ...cleanProduct,
@@ -446,12 +453,14 @@ export default function Home() {
     }
 
     if (editingOrderId) {
+      setIsDirty(true);
       setOrders((current) =>
         current.map((order) =>
           order.id === editingOrderId ? { ...order, ...cleanOrder } : order,
         ),
       );
     } else {
+      setIsDirty(true);
       setOrders((current) => [
         {
           ...cleanOrder,
@@ -476,6 +485,10 @@ export default function Home() {
     });
     setEditingProductId(product.id);
     setActiveTab("new-r-code");
+    window.setTimeout(() => {
+      document.getElementById("panel-new-r-code")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("catalogueRCode")?.focus();
+    }, 0);
   }
 
   function editOrder(order: Order) {
@@ -496,6 +509,10 @@ export default function Home() {
     });
     setEditingOrderId(order.id);
     setActiveTab("new-order");
+    window.setTimeout(() => {
+      document.getElementById("panel-new-order")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("orderRCode")?.focus();
+    }, 0);
   }
 
   function deleteProduct(id: string) {
@@ -506,11 +523,14 @@ export default function Home() {
       setNotice(`Cannot delete ${product.rCode}; it is used in an order.`);
       return;
     }
+    if (!window.confirm(`Delete ${product.rCode} from the catalogue?`)) return;
+    setIsDirty(true);
     setProducts((current) => current.filter((item) => item.id !== id));
   }
 
   function deleteOrder(id: string) {
     if (!window.confirm("Delete this order?")) return;
+    setIsDirty(true);
     setOrders((current) => current.filter((order) => order.id !== id));
   }
 
@@ -574,11 +594,13 @@ export default function Home() {
       try {
         const imported = JSON.parse(String(reader.result));
         if (Array.isArray(imported)) {
+          setIsDirty(true);
           setOrders(imported.map(migrateOrder));
         } else {
           if (!Array.isArray(imported.orders) || !Array.isArray(imported.products)) {
             throw new Error("Invalid backup");
           }
+          setIsDirty(true);
           setOrders(imported.orders.map(migrateOrder));
           setProducts(imported.products);
         }
@@ -597,15 +619,21 @@ export default function Home() {
     const input = event.currentTarget;
     const file = event.target.files?.[0];
     if (!file) return;
+    const uploadId = imageUploadIdRef.current + 1;
+    imageUploadIdRef.current = uploadId;
+    setIsPreparingImage(true);
 
     try {
       const image = await prepareProductImage(file);
+      if (uploadId !== imageUploadIdRef.current) return;
       updateProductField("image", image);
       setNotice("Photo ready. Save the R-code to keep it.");
     } catch {
+      if (uploadId !== imageUploadIdRef.current) return;
+      input.value = "";
       setNotice("Could not read that photo. Choose a JPG, PNG, or WEBP image.");
     } finally {
-      input.value = "";
+      if (uploadId === imageUploadIdRef.current) setIsPreparingImage(false);
     }
   }
 
@@ -780,11 +808,18 @@ export default function Home() {
             <div className="photo-field">
               <ProductImage product={productForm} />
               <div className="field">
-                <label htmlFor="catalogueImage">Product photo</label>
+                <label htmlFor="catalogueImage">
+                  {isPreparingImage ? "Preparing product photo" : "Product photo"}
+                </label>
                 <input
                   id="catalogueImage"
                   type="file"
                   accept="image/*"
+                  disabled={isPreparingImage}
+                  onClick={(event) => {
+                    // Clear before opening so selecting the same file again still fires change.
+                    event.currentTarget.value = "";
+                  }}
                   onChange={uploadProductImage}
                 />
               </div>
@@ -802,7 +837,7 @@ export default function Home() {
             </div>
 
             <div className="form-actions">
-              <button className="primary-button" type="submit">
+              <button className="primary-button" disabled={isPreparingImage} type="submit">
                 {editingProductId ? "Save R-code" : "Add R-code"}
               </button>
             </div>
@@ -1068,12 +1103,14 @@ export default function Home() {
               </div>
               <div className="list-controls">
                 <input
+                  aria-label="Search orders"
                   className="search-input"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search orders"
                 />
                 <select
+                  aria-label="Filter orders by status"
                   className="search-input filter-select"
                   value={statusFilter}
                   onChange={(event) =>

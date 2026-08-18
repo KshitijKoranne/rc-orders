@@ -410,6 +410,8 @@ label:has(input:focus-visible) {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.08em;
+  min-height: 34px;
+  padding: 6px 4px;
   text-transform: uppercase;
 }
 
@@ -648,7 +650,8 @@ label:has(input:focus-visible) {
   border-radius: 4px;
   font-size: 13px;
   font-weight: 760;
-  padding: 4px 0;
+  min-height: 36px;
+  padding: 8px 4px;
 }
 
 .text-button {
@@ -981,6 +984,13 @@ label:has(input:focus-visible) {
   justify-content: space-between;
 }
 
+.order-card-identity {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
 .code-label {
   color: var(--accent);
   font-family: var(--font-geist-mono), monospace;
@@ -1246,6 +1256,7 @@ label:has(input:focus-visible) {
 
   .metric-grid {
     gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .metric-card {
