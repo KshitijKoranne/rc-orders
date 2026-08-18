@@ -12,7 +12,8 @@ const orderStatuses = new Set([
   "Cancelled",
 ]);
 const maxRecords = 5_000;
-const maxImageLength = 1_300_000;
+const maxImageLength = 20_000_000;
+const maxPayloadLength = 100_000_000;
 
 type RecordMap = Record<string, unknown>;
 
@@ -104,7 +105,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > 6_000_000) return errorResponse("Backup is too large", 413);
+  if (contentLength > maxPayloadLength) return errorResponse("Backup is too large", 413);
 
   try {
     const payload: unknown = await request.json();

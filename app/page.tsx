@@ -54,6 +54,7 @@ type OrderForm = Omit<
 };
 type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
 type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
+type ImageViewerState = { src: string; alt: string };
 
 const orderStatuses: OrderStatus[] = [
   "New",
@@ -87,8 +88,7 @@ const initialProductForm: ProductForm = {
   notes: "",
 };
 
-const maxImageBytes = 900_000;
-const maxImageDataLength = 1_250_000;
+const maxImageDataLength = 20_000_000;
 
 const tabItems: Array<{ key: TabKey; label: string }> = [
   { key: "new-r-code", label: "New R-code" },
@@ -140,47 +140,13 @@ function readAsDataUrl(blob: Blob) {
   });
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error("Could not encode image"))),
-      "image/jpeg",
-      quality,
-    );
-  });
-}
-
 async function prepareProductImage(file: File) {
-  if (file.size <= maxImageBytes) return readAsDataUrl(file);
-
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error("Could not decode image"));
-      element.src = objectUrl;
-    });
-    let scale = Math.min(1, 1400 / Math.max(image.naturalWidth, image.naturalHeight));
-
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext("2d");
-      if (!context) throw new Error("Could not prepare image");
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-      const blob = await canvasToBlob(canvas, Math.max(0.55, 0.82 - attempt * 0.06));
-      const dataUrl = await readAsDataUrl(blob);
-      if (dataUrl.length <= maxImageDataLength) return dataUrl;
-      scale *= 0.8;
-    }
-  } finally {
-    URL.revokeObjectURL(objectUrl);
+  if (!file.type.startsWith("image/") || file.size === 0) {
+    throw new Error("Not an image");
   }
-
-  throw new Error("Image is too large");
+  const dataUrl = await readAsDataUrl(file);
+  if (dataUrl.length > maxImageDataLength) throw new Error("Image is too large");
+  return dataUrl;
 }
 
 function makeOrderNo(orders: Order[]) {
@@ -232,7 +198,23 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabKey>("orders");
   const [isDirty, setIsDirty] = useState(false);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
+  const [imageViewer, setImageViewer] = useState<ImageViewerState | null>(null);
+  const [imageScale, setImageScale] = useState(1);
   const imageUploadIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!imageViewer) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setImageViewer(null);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [imageViewer]);
 
   useEffect(() => {
     let active = true;
@@ -378,6 +360,11 @@ export default function Home() {
     setIsPreparingImage(false);
     setProductForm(initialProductForm);
     setEditingProductId(null);
+  }
+
+  function openImageViewer(src: string, alt: string) {
+    setImageScale(1);
+    setImageViewer({ src, alt });
   }
 
   function saveProduct(event: FormEvent<HTMLFormElement>) {
@@ -631,7 +618,7 @@ export default function Home() {
     } catch {
       if (uploadId !== imageUploadIdRef.current) return;
       input.value = "";
-      setNotice("Could not read that photo. Choose a JPG, PNG, or WEBP image.");
+      setNotice("Could not read that photo. Choose a valid image under 15 MB.");
     } finally {
       if (uploadId === imageUploadIdRef.current) setIsPreparingImage(false);
     }
@@ -806,7 +793,7 @@ export default function Home() {
             </div>
 
             <div className="photo-field">
-              <ProductImage product={productForm} />
+              <ProductImage product={productForm} onEnlarge={openImageViewer} />
               <div className="field">
                 <label htmlFor="catalogueImage">
                   {isPreparingImage ? "Preparing product photo" : "Product photo"}
@@ -874,10 +861,11 @@ export default function Home() {
                       value={orderForm.rCode}
                       onChange={(value) => updateOrderField("rCode", value)}
                       onCreateProduct={() => setActiveTab("new-r-code")}
+                      onEnlarge={openImageViewer}
                     />
                   </div>
                   <div className={`selected-product-card ${selectedProduct ? "" : "empty"}`}>
-                    <ProductImage product={selectedProduct} />
+                    <ProductImage product={selectedProduct} onEnlarge={openImageViewer} />
                     <div>
                       <span className="selected-product-label">Selected item</span>
                       <strong>{selectedProduct?.name || "Choose an R-code"}</strong>
@@ -1053,7 +1041,7 @@ export default function Home() {
             <div className="product-grid">
               {products.map((product) => (
                 <article className="product-card" key={product.id}>
-                  <ProductImage product={product} />
+                      <ProductImage product={product} onEnlarge={openImageViewer} />
                   <div className="product-card-body">
                     <div className="product-card-topline">
                       <div>
@@ -1147,6 +1135,7 @@ export default function Home() {
                       key={order.id}
                       order={order}
                       image={productByCode.get(order.rCode)?.image || ""}
+                      onEnlarge={openImageViewer}
                       onEdit={editOrder}
                       onDelete={deleteOrder}
                     />
@@ -1161,6 +1150,7 @@ export default function Home() {
                   key={order.id}
                   order={order}
                   image={productByCode.get(order.rCode)?.image || ""}
+                  onEnlarge={openImageViewer}
                   onEdit={editOrder}
                   onDelete={deleteOrder}
                 />
@@ -1171,6 +1161,59 @@ export default function Home() {
           </section>
         )}
       </section>
+      {imageViewer && (
+        <div
+          aria-label={`${imageViewer.alt} enlarged`}
+          aria-modal="true"
+          className="image-viewer"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setImageViewer(null);
+          }}
+          role="dialog"
+        >
+          <div className="image-viewer-toolbar">
+            <button
+              aria-label="Zoom out"
+              disabled={imageScale <= 1}
+              onClick={() => setImageScale((current) => Math.max(1, current - 0.5))}
+              type="button"
+            >
+              −
+            </button>
+            <button
+              aria-label="Reset image zoom"
+              onClick={() => setImageScale(1)}
+              type="button"
+            >
+              {Math.round(imageScale * 100)}%
+            </button>
+            <button
+              aria-label="Zoom in"
+              disabled={imageScale >= 3}
+              onClick={() => setImageScale((current) => Math.min(3, current + 0.5))}
+              type="button"
+            >
+              +
+            </button>
+            <button aria-label="Close enlarged image" onClick={() => setImageViewer(null)} type="button">
+              Close
+            </button>
+          </div>
+          <div className="image-viewer-stage">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt={imageViewer.alt}
+              className="image-viewer-image"
+              src={imageViewer.src}
+              style={{
+                maxHeight: imageScale === 1 ? "calc(100vh - 96px)" : "none",
+                maxWidth: imageScale === 1 ? "calc(100vw - 48px)" : "none",
+                transform: `scale(${imageScale})`,
+              }}
+            />
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -1192,15 +1235,33 @@ function Metric({
   );
 }
 
-function ProductImage({ product }: { product?: Pick<Product, "image" | "rCode"> | ProductForm }) {
+function ProductImage({
+  product,
+  onEnlarge,
+}: {
+  product?: Pick<Product, "image" | "rCode"> | ProductForm;
+  onEnlarge?: (src: string, alt: string) => void;
+}) {
   if (product?.image) {
-    return (
+    const alt = product.rCode ? `${product.rCode} product` : "Selected product";
+    const image = (
       // eslint-disable-next-line @next/next/no-img-element
-      <img
-        alt={product.rCode ? `${product.rCode} product` : "Selected product"}
-        className="product-image"
-        src={product.image}
-      />
+      <img alt={alt} className={onEnlarge ? "product-image-content" : "product-image"} src={product.image} />
+    );
+    if (onEnlarge) {
+      return (
+        <button
+          aria-label={`Enlarge ${alt}`}
+          className="product-image product-image-button"
+          onClick={() => onEnlarge(product.image, alt)}
+          type="button"
+        >
+          {image}
+        </button>
+      );
+    }
+    return (
+      image
     );
   }
   return <div className="product-image empty-image">{product?.rCode || "R"}</div>;
@@ -1211,11 +1272,13 @@ function RCodePicker({
   value,
   onChange,
   onCreateProduct,
+  onEnlarge,
 }: {
   products: Product[];
   value: string;
   onChange: (value: string) => void;
   onCreateProduct: () => void;
+  onEnlarge: (src: string, alt: string) => void;
 }) {
   const pickerRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -1316,7 +1379,7 @@ function RCodePicker({
         <div className="rcode-menu">
           {previewProduct && (
             <div className="rcode-preview" aria-live="polite">
-              <ProductImage product={previewProduct} />
+              <ProductImage product={previewProduct} onEnlarge={onEnlarge} />
               <div className="rcode-preview-copy">
                 <span className="selected-product-label">Preview</span>
                 <strong>{previewProduct.rCode}</strong>
@@ -1369,11 +1432,13 @@ function RCodePicker({
 function OrderRow({
   order,
   image,
+  onEnlarge,
   onEdit,
   onDelete,
 }: {
   order: Order;
   image: string;
+  onEnlarge: (src: string, alt: string) => void;
   onEdit: (order: Order) => void;
   onDelete: (id: string) => void;
 }) {
@@ -1383,7 +1448,7 @@ function OrderRow({
       <td className="strong-cell">{order.orderNo}</td>
       <td>
         <div className="order-code-cell">
-          <ProductImage product={{ image, rCode: order.rCode }} />
+          <ProductImage product={{ image, rCode: order.rCode }} onEnlarge={onEnlarge} />
           <span className="code-label">{order.rCode}</span>
         </div>
       </td>
@@ -1433,11 +1498,13 @@ function OrderRow({
 function OrderCard({
   order,
   image,
+  onEnlarge,
   onEdit,
   onDelete,
 }: {
   order: Order;
   image: string;
+  onEnlarge: (src: string, alt: string) => void;
   onEdit: (order: Order) => void;
   onDelete: (id: string) => void;
 }) {
@@ -1446,7 +1513,7 @@ function OrderCard({
     <article className="order-card">
       <div className="order-card-heading">
         <div className="order-card-identity">
-          <ProductImage product={{ image, rCode: order.rCode }} />
+          <ProductImage product={{ image, rCode: order.rCode }} onEnlarge={onEnlarge} />
           <div>
             <p className="code-label">
               {order.orderNo} | {order.rCode}
