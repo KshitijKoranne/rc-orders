@@ -78,6 +78,9 @@ const initialProductForm: ProductForm = {
   notes: "",
 };
 
+const maxImageBytes = 900_000;
+const maxImageDataLength = 1_250_000;
+
 const tabItems: Array<{ key: TabKey; label: string }> = [
   { key: "new-r-code", label: "New R-code" },
   { key: "new-order", label: "New order" },
@@ -111,6 +114,58 @@ function derivePaymentStatus(amount: number, paid: number): PaymentStatus {
   if (paid <= 0) return "Pending";
   if (paid >= amount && amount > 0) return "Paid";
   return "Partial";
+}
+
+function readAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read image"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("Could not encode image"))),
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
+async function prepareProductImage(file: File) {
+  if (file.size <= maxImageBytes) return readAsDataUrl(file);
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("Could not decode image"));
+      element.src = objectUrl;
+    });
+    let scale = Math.min(1, 1400 / Math.max(image.naturalWidth, image.naturalHeight));
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Could not prepare image");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      const blob = await canvasToBlob(canvas, Math.max(0.55, 0.82 - attempt * 0.06));
+      const dataUrl = await readAsDataUrl(blob);
+      if (dataUrl.length <= maxImageDataLength) return dataUrl;
+      scale *= 0.8;
+    }
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  throw new Error("Image is too large");
 }
 
 function makeOrderNo(orders: Order[]) {
@@ -523,21 +578,20 @@ export default function Home() {
     event.target.value = "";
   }
 
-  function uploadProductImage(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadProductImage(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
     const file = event.target.files?.[0];
     if (!file) return;
-    if (file.size > 900_000) {
-      setNotice("Use an image below 900 KB for now, otherwise browser storage fills quickly.");
-      event.target.value = "";
-      return;
-    }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      updateProductField("image", String(reader.result));
-    };
-    reader.readAsDataURL(file);
-    event.target.value = "";
+    try {
+      const image = await prepareProductImage(file);
+      updateProductField("image", image);
+      setNotice("Photo ready. Save the R-code to keep it.");
+    } catch {
+      setNotice("Could not read that photo. Choose a JPG, PNG, or WEBP image.");
+    } finally {
+      input.value = "";
+    }
   }
 
   function downloadFile(content: string, filename: string, type: string) {
