@@ -66,6 +66,7 @@ function orderValue(value: unknown) {
     id: requiredText(value.id, "order id", 120),
     orderNo: requiredText(value.orderNo, "order number", 40),
     rCode: requiredText(value.rCode, "order R-code", 40),
+    fragrance: textValue(value.fragrance ?? "", "fragrance", 40),
     unitPrice: integerValue(value.unitPrice, "unit price"),
     customer: requiredText(value.customer, "customer", 200),
     phone: textValue(value.phone, "phone", 80),

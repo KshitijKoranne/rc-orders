@@ -14,6 +14,7 @@ export const orders = pgTable("rithya_orders", {
   id: text("id").primaryKey(),
   orderNo: text("order_no").notNull().unique(),
   rCode: text("r_code").notNull(),
+  fragrance: text("fragrance").notNull().default(""),
   unitPrice: integer("unit_price").notNull(),
   customer: text("customer").notNull(),
   phone: text("phone").notNull().default(""),

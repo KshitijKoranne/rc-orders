@@ -27,6 +27,7 @@ type Order = {
   id: string;
   orderNo: string;
   rCode: string;
+  fragrance: string;
   unitPrice: number;
   customer: string;
   phone: string;
@@ -64,8 +65,23 @@ const orderStatuses: OrderStatus[] = [
   "Cancelled",
 ];
 
+const fragranceOptions = [
+  "Jasmin",
+  "Rose",
+  "Sandlewood",
+  "Lavender",
+  "Kevada",
+  "Mogra",
+  "Kapur",
+  "Lemon",
+  "Orange",
+  "Vanilla",
+  "Kesarchandan",
+];
+
 const initialOrderForm: OrderForm = {
   rCode: "",
+  fragrance: "",
   unitPrice: 0,
   customer: "",
   phone: "",
@@ -165,6 +181,7 @@ function migrateOrder(raw: Partial<Order>): Order {
     id: raw.id || makeId("order"),
     orderNo: raw.orderNo || "RC-1001",
     rCode: normalizeRCode(raw.rCode || ""),
+    fragrance: raw.fragrance || "",
     unitPrice: Number(raw.unitPrice) || (quantity ? amount / quantity : amount),
     customer: raw.customer || "",
     phone: raw.phone || "",
@@ -293,6 +310,7 @@ export default function Home() {
           order.customer,
           order.phone,
           order.product,
+          order.fragrance,
           order.source,
         ].some((field) => field.toLowerCase().includes(search));
       const matchesStatus =
@@ -418,6 +436,7 @@ export default function Home() {
     const cleanOrder = {
       ...orderForm,
       rCode: normalizeRCode(orderForm.rCode),
+      fragrance: orderForm.fragrance.trim(),
       customer: orderForm.customer.trim(),
       phone: orderForm.phone.trim(),
       product: orderForm.product.trim(),
@@ -481,6 +500,7 @@ export default function Home() {
   function editOrder(order: Order) {
     setOrderForm({
       rCode: order.rCode,
+      fragrance: order.fragrance,
       unitPrice: order.unitPrice,
       customer: order.customer,
       phone: order.phone,
@@ -525,6 +545,7 @@ export default function Home() {
     const headers = [
       "Order No",
       "R Code",
+      "Fragrance",
       "Customer",
       "Phone",
       "Product",
@@ -542,6 +563,7 @@ export default function Home() {
     const rows = orders.map((order) => [
       order.orderNo,
       order.rCode,
+      order.fragrance,
       order.customer,
       order.phone,
       order.product,
@@ -919,6 +941,22 @@ export default function Home() {
                     onChange={(event) => updateOrderField("product", event.target.value)}
                     placeholder="Choose an R-code first"
                   />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="fragrance">Fragrance</label>
+                  <select
+                    id="fragrance"
+                    value={orderForm.fragrance}
+                    onChange={(event) => updateOrderField("fragrance", event.target.value)}
+                  >
+                    <option value="">Select fragrance</option>
+                    {fragranceOptions.map((fragrance) => (
+                      <option key={fragrance} value={fragrance}>
+                        {fragrance}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="field">
@@ -1458,6 +1496,7 @@ function OrderRow({
       </td>
       <td>
         <p>{order.product}</p>
+        {order.fragrance && <p className="muted-line">Fragrance: {order.fragrance}</p>}
         <p className="muted-line">
           Qty {order.quantity} x {currency(order.unitPrice)} via {order.source}
         </p>
@@ -1525,6 +1564,7 @@ function OrderCard({
         <Chip label={order.orderStatus} />
       </div>
       <p className="order-product">{order.product}</p>
+      {order.fragrance && <p className="muted-line">Fragrance: {order.fragrance}</p>}
       <p className="muted-line">
         Qty {order.quantity} x {currency(order.unitPrice)} | {order.source} | Due{" "}
         {order.dueDate || "-"}

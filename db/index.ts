@@ -37,6 +37,7 @@ async function ensureSchema(sql: SqlClient) {
       id text PRIMARY KEY,
       order_no text NOT NULL UNIQUE,
       r_code text NOT NULL,
+      fragrance text NOT NULL DEFAULT '',
       unit_price integer NOT NULL,
       customer text NOT NULL,
       phone text NOT NULL DEFAULT '',
@@ -51,6 +52,10 @@ async function ensureSchema(sql: SqlClient) {
       notes text NOT NULL DEFAULT '',
       created_at text NOT NULL
     )
+  `;
+  await sql`
+    ALTER TABLE rithya_orders
+    ADD COLUMN IF NOT EXISTS fragrance text NOT NULL DEFAULT ''
   `;
 }
 
