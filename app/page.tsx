@@ -18,7 +18,8 @@ type Product = {
   rCode: string;
   name: string;
   price: number;
-  image: string;
+  image?: string;
+  imageUrl?: string;
   notes: string;
   createdAt: string;
 };
@@ -56,6 +57,7 @@ type OrderForm = Omit<
 type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
 type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
 type ImageViewerState = { src: string; alt: string };
+type BackupStatus = "idle" | "preparing" | "saving" | "error";
 
 const orderStatuses: OrderStatus[] = [
   "New",
@@ -217,7 +219,9 @@ export default function Home() {
   const [isPreparingImage, setIsPreparingImage] = useState(false);
   const [imageViewer, setImageViewer] = useState<ImageViewerState | null>(null);
   const [imageScale, setImageScale] = useState(1);
+  const [backupStatus, setBackupStatus] = useState<BackupStatus>("idle");
   const imageUploadIdRef = useRef(0);
+  const saveRequestRef = useRef(0);
 
   useEffect(() => {
     if (!imageViewer) return;
@@ -272,21 +276,31 @@ export default function Home() {
 
   useEffect(() => {
     if (!isLoaded || !databaseConnected || !isDirty) return;
+    const requestId = ++saveRequestRef.current;
     const saveTimer = window.setTimeout(async () => {
       setIsSyncing(true);
       setSyncError(false);
       try {
+        const productsForSave = products.map((product) => {
+          const snapshot = { ...product };
+          delete snapshot.imageUrl;
+          if (!snapshot.image) delete snapshot.image;
+          return snapshot;
+        });
         const response = await fetch("/api/records", {
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ products, orders }),
+          body: JSON.stringify({ products: productsForSave, orders }),
         });
         if (!response.ok) throw new Error("Could not save records");
+        if (requestId === saveRequestRef.current) setIsDirty(false);
       } catch {
-        setSyncError(true);
-        setNotice("Could not save changes to the database.");
+        if (requestId === saveRequestRef.current) {
+          setSyncError(true);
+          setNotice("Could not save changes to the database.");
+        }
       } finally {
-        setIsSyncing(false);
+        if (requestId === saveRequestRef.current) setIsSyncing(false);
       }
     }, 250);
 
@@ -487,6 +501,7 @@ export default function Home() {
       name: product.name,
       price: product.price,
       image: product.image,
+      imageUrl: product.imageUrl,
       notes: product.notes,
     });
     setEditingProductId(product.id);
@@ -586,12 +601,47 @@ export default function Home() {
     downloadFile(csv, "rithya-orders.csv", "text/csv");
   }
 
-  function backupJson() {
-    downloadFile(
-      JSON.stringify({ products, orders }, null, 2),
-      "rithya-creation-backup.json",
-      "application/json",
-    );
+  async function backupJson() {
+    if (isDirty || isSyncing) {
+      setBackupStatus("error");
+      setNotice("Finish saving changes before creating a backup.");
+      return;
+    }
+    setBackupStatus("preparing");
+    setNotice("Preparing backup with original product images…");
+
+    try {
+      const response = await fetch("/api/records?includeImages=1", { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not read complete records");
+      const payload = (await response.json()) as {
+        products?: Product[];
+        orders?: Partial<Order>[];
+      };
+      if (!Array.isArray(payload.products) || !Array.isArray(payload.orders)) {
+        throw new Error("Invalid complete records response");
+      }
+
+      const backedUpProducts = new Map(payload.products.map((product) => [product.id, product]));
+      const missingImages = products.some((product) => {
+        if (!product.image && !product.imageUrl) return false;
+        return !backedUpProducts.get(product.id)?.image;
+      });
+      if (missingImages) throw new Error("Complete records did not include every product image");
+
+      setBackupStatus("saving");
+      setNotice("Saving backup…");
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+      downloadFile(
+        JSON.stringify({ products: payload.products, orders: payload.orders }, null, 2),
+        "rithya-creation-backup.json",
+        "application/json",
+      );
+      setBackupStatus("idle");
+      setNotice("Backup saved with original product images.");
+    } catch {
+      setBackupStatus("error");
+      setNotice("Backup failed. No file was downloaded because complete images were not verified.");
+    }
   }
 
   function restoreJson(event: ChangeEvent<HTMLInputElement>) {
@@ -685,22 +735,34 @@ export default function Home() {
             aria-live="polite"
             className={`sync-status ${databaseConnected ? "connected" : "offline"}`}
           >
-            {isLoaded
+            {databaseConnected
               ? isSyncing
                 ? "Saving"
                 : syncError
                   ? "Save failed"
-                  : databaseConnected
-                    ? "Saved"
-                    : "Offline"
-              : "Connecting"}
+                  : "Saved"
+              : isLoaded
+                ? "Offline"
+                : "Connecting"}
           </span>
           <div className="header-tools">
             <button className="tool-button" onClick={exportCsv} type="button">
               Export CSV
             </button>
-            <button className="tool-button" onClick={backupJson} type="button">
-              Backup
+            <button
+              aria-busy={backupStatus === "preparing" || backupStatus === "saving"}
+              className="tool-button"
+              disabled={backupStatus === "preparing" || backupStatus === "saving"}
+              onClick={backupJson}
+              type="button"
+            >
+              {backupStatus === "preparing"
+                ? "Preparing backup"
+                : backupStatus === "saving"
+                  ? "Saving backup"
+                  : backupStatus === "error"
+                    ? "Retry backup"
+                    : "Backup"}
             </button>
             <label className="tool-button file-trigger">
               Restore
@@ -1173,6 +1235,7 @@ export default function Home() {
                       key={order.id}
                       order={order}
                       image={productByCode.get(order.rCode)?.image || ""}
+                      imageUrl={productByCode.get(order.rCode)?.imageUrl}
                       onEnlarge={openImageViewer}
                       onEdit={editOrder}
                       onDelete={deleteOrder}
@@ -1188,6 +1251,7 @@ export default function Home() {
                   key={order.id}
                   order={order}
                   image={productByCode.get(order.rCode)?.image || ""}
+                  imageUrl={productByCode.get(order.rCode)?.imageUrl}
                   onEnlarge={openImageViewer}
                   onEdit={editOrder}
                   onDelete={deleteOrder}
@@ -1277,21 +1341,28 @@ function ProductImage({
   product,
   onEnlarge,
 }: {
-  product?: Pick<Product, "image" | "rCode"> | ProductForm;
+  product?: Pick<Product, "image" | "imageUrl" | "rCode"> | ProductForm;
   onEnlarge?: (src: string, alt: string) => void;
 }) {
-  if (product?.image) {
+  const imageSrc = product?.image || product?.imageUrl;
+  if (imageSrc) {
     const alt = product.rCode ? `${product.rCode} product` : "Selected product";
     const image = (
       // eslint-disable-next-line @next/next/no-img-element
-      <img alt={alt} className={onEnlarge ? "product-image-content" : "product-image"} src={product.image} />
+      <img
+        alt={alt}
+        className={onEnlarge ? "product-image-content" : "product-image"}
+        decoding="async"
+        loading="lazy"
+        src={imageSrc}
+      />
     );
     if (onEnlarge) {
       return (
         <button
           aria-label={`Enlarge ${alt}`}
           className="product-image product-image-button"
-          onClick={() => onEnlarge(product.image, alt)}
+          onClick={() => onEnlarge(imageSrc, alt)}
           type="button"
         >
           {image}
@@ -1470,12 +1541,14 @@ function RCodePicker({
 function OrderRow({
   order,
   image,
+  imageUrl,
   onEnlarge,
   onEdit,
   onDelete,
 }: {
   order: Order;
   image: string;
+  imageUrl?: string;
   onEnlarge: (src: string, alt: string) => void;
   onEdit: (order: Order) => void;
   onDelete: (id: string) => void;
@@ -1486,7 +1559,7 @@ function OrderRow({
       <td className="strong-cell">{order.orderNo}</td>
       <td>
         <div className="order-code-cell">
-          <ProductImage product={{ image, rCode: order.rCode }} onEnlarge={onEnlarge} />
+          <ProductImage product={{ image, imageUrl, rCode: order.rCode }} onEnlarge={onEnlarge} />
           <span className="code-label">{order.rCode}</span>
         </div>
       </td>
@@ -1537,12 +1610,14 @@ function OrderRow({
 function OrderCard({
   order,
   image,
+  imageUrl,
   onEnlarge,
   onEdit,
   onDelete,
 }: {
   order: Order;
   image: string;
+  imageUrl?: string;
   onEnlarge: (src: string, alt: string) => void;
   onEdit: (order: Order) => void;
   onDelete: (id: string) => void;
@@ -1552,7 +1627,7 @@ function OrderCard({
     <article className="order-card">
       <div className="order-card-heading">
         <div className="order-card-identity">
-          <ProductImage product={{ image, rCode: order.rCode }} onEnlarge={onEnlarge} />
+          <ProductImage product={{ image, imageUrl, rCode: order.rCode }} onEnlarge={onEnlarge} />
           <div>
             <p className="code-label">
               {order.orderNo} | {order.rCode}
