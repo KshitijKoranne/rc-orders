@@ -36,6 +36,7 @@ async function ensureSchema(sql: SqlClient) {
     CREATE TABLE IF NOT EXISTS rithya_orders (
       id text PRIMARY KEY,
       order_no text NOT NULL UNIQUE,
+      items text NOT NULL DEFAULT '[]',
       r_code text NOT NULL,
       fragrance text NOT NULL DEFAULT '',
       unit_price integer NOT NULL,
@@ -56,6 +57,10 @@ async function ensureSchema(sql: SqlClient) {
   await sql`
     ALTER TABLE rithya_orders
     ADD COLUMN IF NOT EXISTS fragrance text NOT NULL DEFAULT ''
+  `;
+  await sql`
+    ALTER TABLE rithya_orders
+    ADD COLUMN IF NOT EXISTS items text NOT NULL DEFAULT '[]'
   `;
 }
 

@@ -4,7 +4,6 @@ import { orders as ordersTable, products as productsTable } from "../../../db/sc
 
 export const runtime = "nodejs";
 
-const paymentStatuses = new Set(["Pending", "Partial", "Paid"]);
 const orderStatuses = new Set([
   "New",
   "In Progress",
@@ -13,6 +12,7 @@ const orderStatuses = new Set([
   "Cancelled",
 ]);
 const maxRecords = 5_000;
+const maxItemsPerOrder = 100;
 const maxImageLength = 20_000_000;
 const maxPayloadLength = 100_000_000;
 
@@ -56,32 +56,100 @@ function productValue(value: unknown) {
   };
 }
 
+function orderItemValue(value: unknown, index: number) {
+  if (!isRecord(value)) throw new Error(`Invalid order item ${index + 1}`);
+  return {
+    id: requiredText(value.id, `order item ${index + 1} id`, 120),
+    rCode: requiredText(value.rCode, `order item ${index + 1} R-code`, 40),
+    fragrance: textValue(value.fragrance ?? "", `order item ${index + 1} fragrance`, 40),
+    unitPrice: integerValue(value.unitPrice, `order item ${index + 1} unit price`),
+    product: requiredText(value.product, `order item ${index + 1} product`, 200),
+    quantity: integerValue(value.quantity, `order item ${index + 1} quantity`, 1),
+    amount: integerValue(value.amount, `order item ${index + 1} amount`),
+  };
+}
+
+function derivePaymentStatus(amount: number, paid: number) {
+  if (paid <= 0) return "Pending";
+  if (paid >= amount && amount > 0) return "Paid";
+  return "Partial";
+}
+
 function orderValue(value: unknown) {
   if (!isRecord(value)) throw new Error("Invalid order");
-  const paymentStatus = requiredText(value.paymentStatus, "payment status", 30);
+  const id = requiredText(value.id, "order id", 120);
   const orderStatus = requiredText(value.orderStatus, "order status", 30);
-  if (!paymentStatuses.has(paymentStatus)) throw new Error("Invalid payment status");
   if (!orderStatuses.has(orderStatus)) throw new Error("Invalid order status");
 
+  const rawItems =
+    value.items === undefined
+      ? [
+          {
+            id: `${id}-item-1`,
+            rCode: value.rCode,
+            fragrance: value.fragrance ?? "",
+            unitPrice: value.unitPrice,
+            product: value.product,
+            quantity: value.quantity,
+            amount: value.amount,
+          },
+        ]
+      : value.items;
+  if (!Array.isArray(rawItems) || rawItems.length === 0 || rawItems.length > maxItemsPerOrder) {
+    throw new Error("Invalid order items");
+  }
+  const items = rawItems.map(orderItemValue);
+  const amount = items.reduce((total, item) => total + item.amount, 0);
+  if (amount > 100_000_000) throw new Error("Invalid order amount");
+  const paid = integerValue(value.paid, "paid");
+  const firstItem = items[0];
+
   return {
-    id: requiredText(value.id, "order id", 120),
+    id,
     orderNo: requiredText(value.orderNo, "order number", 40),
-    rCode: requiredText(value.rCode, "order R-code", 40),
-    fragrance: textValue(value.fragrance ?? "", "fragrance", 40),
-    unitPrice: integerValue(value.unitPrice, "unit price"),
+    items: JSON.stringify(items),
+    rCode: firstItem.rCode,
+    fragrance: firstItem.fragrance,
+    unitPrice: firstItem.unitPrice,
     customer: requiredText(value.customer, "customer", 200),
     phone: textValue(value.phone, "phone", 80),
-    product: requiredText(value.product, "order product", 200),
-    quantity: integerValue(value.quantity, "quantity", 1),
-    amount: integerValue(value.amount, "amount"),
-    paid: integerValue(value.paid, "paid"),
-    paymentStatus,
+    product: firstItem.product,
+    quantity: firstItem.quantity,
+    amount,
+    paid,
+    paymentStatus: derivePaymentStatus(amount, paid),
     orderStatus,
     dueDate: textValue(value.dueDate, "due date", 40),
     source: requiredText(value.source, "source", 80),
     notes: textValue(value.notes, "order notes"),
     createdAt: requiredText(value.createdAt, "order date", 80),
   };
+}
+
+type StoredOrder = typeof ordersTable.$inferSelect;
+
+function publicOrder(order: StoredOrder) {
+  let items: unknown[] = [];
+  try {
+    const parsed = JSON.parse(order.items);
+    if (Array.isArray(parsed)) items = parsed;
+  } catch {
+    items = [];
+  }
+  if (!items.length) {
+    items = [
+      {
+        id: `${order.id}-item-1`,
+        rCode: order.rCode,
+        fragrance: order.fragrance,
+        unitPrice: order.unitPrice,
+        product: order.product,
+        quantity: order.quantity,
+        amount: order.amount,
+      },
+    ];
+  }
+  return { ...order, items };
 }
 
 function errorResponse(message: string, status: number) {
@@ -130,13 +198,13 @@ export async function GET(request: Request) {
               imageUrl: hasImage ? imageUrl(product.id) : "",
             })),
           );
-    const [products, orders] = await Promise.all([
+    const [products, storedOrders] = await Promise.all([
       productsPromise,
       db.select().from(ordersTable),
     ]);
 
     return Response.json(
-      { products, orders },
+      { products, orders: storedOrders.map(publicOrder) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

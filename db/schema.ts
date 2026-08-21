@@ -13,6 +13,7 @@ export const products = pgTable("rithya_products", {
 export const orders = pgTable("rithya_orders", {
   id: text("id").primaryKey(),
   orderNo: text("order_no").notNull().unique(),
+  items: text("items").notNull().default("[]"),
   rCode: text("r_code").notNull(),
   fragrance: text("fragrance").notNull().default(""),
   unitPrice: integer("unit_price").notNull(),

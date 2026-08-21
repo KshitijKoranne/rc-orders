@@ -24,16 +24,22 @@ type Product = {
   createdAt: string;
 };
 
-type Order = {
+type OrderItem = {
   id: string;
-  orderNo: string;
   rCode: string;
   fragrance: string;
   unitPrice: number;
-  customer: string;
-  phone: string;
   product: string;
   quantity: number;
+  amount: number;
+};
+
+type Order = {
+  id: string;
+  orderNo: string;
+  customer: string;
+  phone: string;
+  items: OrderItem[];
   amount: number;
   paid: number;
   paymentStatus: PaymentStatus;
@@ -45,13 +51,24 @@ type Order = {
 };
 
 type NumericInput = number | "";
-type OrderForm = Omit<
-  Order,
-  "id" | "orderNo" | "createdAt" | "unitPrice" | "quantity" | "amount" | "paid"
-> & {
+type RawOrder = Partial<Omit<Order, "items">> & {
+  items?: unknown;
+  rCode?: string;
+  fragrance?: string;
+  unitPrice?: number;
+  product?: string;
+  quantity?: number;
+};
+type OrderItemForm = Omit<OrderItem, "id"> & {
   unitPrice: NumericInput;
   quantity: NumericInput;
   amount: NumericInput;
+};
+type OrderForm = Omit<
+  Order,
+  "id" | "orderNo" | "createdAt" | "items" | "amount" | "paid"
+> & {
+  items: Array<OrderItemForm & { id: string }>;
   paid: NumericInput;
 };
 type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
@@ -81,22 +98,31 @@ const fragranceOptions = [
   "Kesarchandan",
 ];
 
-const initialOrderForm: OrderForm = {
-  rCode: "",
-  fragrance: "",
-  unitPrice: 0,
-  customer: "",
-  phone: "",
-  product: "",
-  quantity: 1,
-  amount: 0,
-  paid: 0,
-  paymentStatus: "Pending",
-  orderStatus: "New",
-  dueDate: "",
-  source: "WhatsApp",
-  notes: "",
-};
+function makeEmptyOrderItem(): OrderItemForm & { id: string } {
+  return {
+    id: makeId("item"),
+    rCode: "",
+    fragrance: "",
+    unitPrice: 0,
+    product: "",
+    quantity: 1,
+    amount: 0,
+  };
+}
+
+function makeInitialOrderForm(): OrderForm {
+  return {
+    items: [makeEmptyOrderItem()],
+    customer: "",
+    phone: "",
+    paid: 0,
+    paymentStatus: "Pending",
+    orderStatus: "New",
+    dueDate: "",
+    source: "WhatsApp",
+    notes: "",
+  };
+}
 
 const initialProductForm: ProductForm = {
   rCode: "",
@@ -149,6 +175,10 @@ function derivePaymentStatus(amount: number, paid: number): PaymentStatus {
   return "Partial";
 }
 
+function orderTotal(items: Array<{ amount: NumericInput }>) {
+  return items.reduce((total, item) => total + (Number(item.amount) || 0), 0);
+}
+
 function readAsDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -175,23 +205,48 @@ function makeOrderNo(orders: Order[]) {
   return `RC-${max + 1}`;
 }
 
-function migrateOrder(raw: Partial<Order>): Order {
+function migrateOrder(raw: RawOrder): Order {
   const quantity = Number(raw.quantity) || 1;
-  const amount = Number(raw.amount) || 0;
+  const legacyAmount = Number(raw.amount) || 0;
+  const legacyUnitPrice = Number(raw.unitPrice) || (quantity ? legacyAmount / quantity : legacyAmount);
+  const legacyItem: OrderItem = {
+    id: makeId("item"),
+    rCode: normalizeRCode(raw.rCode || ""),
+    fragrance: raw.fragrance || "",
+    unitPrice: legacyUnitPrice,
+    product: raw.product || "",
+    quantity,
+    amount: legacyAmount,
+  };
+  const rawItems = Array.isArray(raw.items) ? raw.items : [];
+  const items = (rawItems.length ? rawItems : [legacyItem]).map((rawItem, index) => {
+    const item =
+      typeof rawItem === "object" && rawItem !== null
+        ? (rawItem as Partial<OrderItem>)
+        : legacyItem;
+    const itemQuantity = Number(item.quantity) || 1;
+    const itemUnitPrice = Number(item.unitPrice) || 0;
+    return {
+      id: item.id || `${raw.id || "order"}-item-${index + 1}`,
+      rCode: normalizeRCode(item.rCode || ""),
+      fragrance: item.fragrance || "",
+      unitPrice: itemUnitPrice,
+      product: item.product || "",
+      quantity: itemQuantity,
+      amount: Number(item.amount) || itemUnitPrice * itemQuantity,
+    };
+  });
+  const amount = orderTotal(items);
   const paid = Number(raw.paid) || 0;
   return {
     id: raw.id || makeId("order"),
     orderNo: raw.orderNo || "RC-1001",
-    rCode: normalizeRCode(raw.rCode || ""),
-    fragrance: raw.fragrance || "",
-    unitPrice: Number(raw.unitPrice) || (quantity ? amount / quantity : amount),
     customer: raw.customer || "",
     phone: raw.phone || "",
-    product: raw.product || "",
-    quantity,
+    items,
     amount,
     paid,
-    paymentStatus: raw.paymentStatus || derivePaymentStatus(amount, paid),
+    paymentStatus: derivePaymentStatus(amount, paid),
     orderStatus: raw.orderStatus || "New",
     dueDate: raw.dueDate || "",
     source: raw.source || "Direct",
@@ -203,7 +258,7 @@ function migrateOrder(raw: Partial<Order>): Order {
 export default function Home() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [orderForm, setOrderForm] = useState<OrderForm>(initialOrderForm);
+  const [orderForm, setOrderForm] = useState<OrderForm>(makeInitialOrderForm);
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -246,7 +301,7 @@ export default function Home() {
         if (!response.ok) throw new Error("Database unavailable");
         const payload = (await response.json()) as {
           products?: Product[];
-          orders?: Partial<Order>[];
+          orders?: RawOrder[];
         };
         if (!Array.isArray(payload.products) || !Array.isArray(payload.orders)) {
           throw new Error("Invalid records response");
@@ -311,22 +366,21 @@ export default function Home() {
     return new Map(products.map((product) => [product.rCode, product]));
   }, [products]);
 
-  const selectedProduct = productByCode.get(normalizeRCode(orderForm.rCode));
-
   const visibleOrders = useMemo(() => {
     const search = query.trim().toLowerCase();
     return orders.filter((order) => {
-      const matchesSearch =
-        !search ||
-        [
-          order.orderNo,
-          order.rCode,
-          order.customer,
-          order.phone,
-          order.product,
-          order.fragrance,
-          order.source,
-        ].some((field) => field.toLowerCase().includes(search));
+      const matchesOrderFields = [
+        order.orderNo,
+        order.customer,
+        order.phone,
+        order.source,
+      ].some((field) => field.toLowerCase().includes(search));
+      const matchesItemFields = order.items.some((item) =>
+        [item.rCode, item.product, item.fragrance].some((field) =>
+          field.toLowerCase().includes(search),
+        ),
+      );
+      const matchesSearch = !search || matchesOrderFields || matchesItemFields;
       const matchesStatus =
         statusFilter === "All" || order.orderStatus === statusFilter;
       return matchesSearch && matchesStatus;
@@ -350,31 +404,72 @@ export default function Home() {
   }, [orders, products]);
 
   function updateOrderField(
-    field: keyof OrderForm,
+    field: Exclude<keyof OrderForm, "items">,
     value: string | number | PaymentStatus | OrderStatus,
   ) {
     setOrderForm((current) => {
       const next = { ...current, [field]: value };
-      if (field === "rCode") {
-        const product = productByCode.get(normalizeRCode(String(value)));
-        if (product) {
-          next.rCode = product.rCode;
-          next.product = product.name;
-          next.unitPrice = product.price;
-          next.amount = product.price * Number(next.quantity || 1);
-        }
-      }
-      if (field === "quantity") {
-        const product = productByCode.get(normalizeRCode(next.rCode));
-        if (product) {
-          next.unitPrice = product.price;
-          next.amount = product.price * Number(value || 1);
-        }
-      }
-      if (field === "amount" || field === "paid" || field === "quantity" || field === "rCode") {
-        next.paymentStatus = derivePaymentStatus(Number(next.amount), Number(next.paid));
+      if (field === "paid") {
+        next.paymentStatus = derivePaymentStatus(orderTotal(next.items), Number(value));
       }
       return next;
+    });
+  }
+
+  function updateOrderItem(
+    index: number,
+    field: keyof OrderItemForm,
+    value: string | number,
+  ) {
+    setOrderForm((current) => {
+      const items = current.items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        const next = { ...item, [field]: value };
+        if (field === "rCode") {
+          const product = productByCode.get(normalizeRCode(String(value)));
+          if (product) {
+            next.rCode = product.rCode;
+            next.product = product.name;
+            next.unitPrice = product.price;
+            next.amount = product.price * Number(next.quantity || 1);
+          } else {
+            next.product = "";
+            next.unitPrice = 0;
+            next.amount = 0;
+          }
+        }
+        if (field === "quantity") {
+          const product = productByCode.get(normalizeRCode(next.rCode));
+          const unitPrice = (product?.price ?? Number(next.unitPrice)) || 0;
+          next.unitPrice = product?.price ?? next.unitPrice;
+          next.amount = unitPrice * Number(value || 1);
+        }
+        return next;
+      });
+      return {
+        ...current,
+        items,
+        paymentStatus: derivePaymentStatus(orderTotal(items), Number(current.paid)),
+      };
+    });
+  }
+
+  function addOrderItem() {
+    setOrderForm((current) => ({
+      ...current,
+      items: [...current.items, makeEmptyOrderItem()],
+    }));
+  }
+
+  function removeOrderItem(id: string) {
+    setOrderForm((current) => {
+      if (current.items.length <= 1) return current;
+      const items = current.items.filter((item) => item.id !== id);
+      return {
+        ...current,
+        items,
+        paymentStatus: derivePaymentStatus(orderTotal(items), Number(current.paid)),
+      };
     });
   }
 
@@ -383,7 +478,7 @@ export default function Home() {
   }
 
   function resetOrderForm() {
-    setOrderForm(initialOrderForm);
+    setOrderForm(makeInitialOrderForm());
     setEditingOrderId(null);
   }
 
@@ -447,28 +542,44 @@ export default function Home() {
 
   function saveOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const cleanItems = orderForm.items.map((item) => {
+      const quantity = Number(item.quantity) || 1;
+      const unitPrice = Number(item.unitPrice) || 0;
+      return {
+        ...item,
+        rCode: normalizeRCode(item.rCode),
+        fragrance: item.fragrance.trim(),
+        product: item.product.trim(),
+        quantity,
+        unitPrice,
+        amount: Number(item.amount) || unitPrice * quantity,
+      };
+    });
+    const amount = orderTotal(cleanItems);
     const cleanOrder = {
       ...orderForm,
-      rCode: normalizeRCode(orderForm.rCode),
-      fragrance: orderForm.fragrance.trim(),
       customer: orderForm.customer.trim(),
       phone: orderForm.phone.trim(),
-      product: orderForm.product.trim(),
+      items: cleanItems,
       source: orderForm.source.trim() || "Direct",
       notes: orderForm.notes.trim(),
-      quantity: Number(orderForm.quantity) || 1,
-      unitPrice: Number(orderForm.unitPrice) || 0,
-      amount: Number(orderForm.amount) || 0,
+      amount,
       paid: Number(orderForm.paid) || 0,
     };
     cleanOrder.paymentStatus = derivePaymentStatus(cleanOrder.amount, cleanOrder.paid);
 
-    if (!cleanOrder.rCode) {
-      setNotice("Enter an R-code before saving the order.");
+    const missingItem = cleanOrder.items.find((item) => !item.rCode);
+    if (missingItem) {
+      setNotice("Enter an R-code for every item before saving the order.");
       return;
     }
-    if (!productByCode.has(cleanOrder.rCode)) {
-      setNotice(`Add ${cleanOrder.rCode} to catalogue first so price is controlled.`);
+    const uncataloguedItem = cleanOrder.items.find(
+      (item) => !productByCode.has(item.rCode),
+    );
+    if (uncataloguedItem) {
+      setNotice(
+        `Add ${uncataloguedItem.rCode} to catalogue first so price is controlled.`,
+      );
       return;
     }
 
@@ -491,7 +602,9 @@ export default function Home() {
         ...current,
       ]);
     }
-    setNotice(`${cleanOrder.rCode} order saved.`);
+    setNotice(
+      `${cleanOrder.items.length} item${cleanOrder.items.length === 1 ? "" : "s"} order saved.`,
+    );
     resetOrderForm();
   }
 
@@ -514,14 +627,9 @@ export default function Home() {
 
   function editOrder(order: Order) {
     setOrderForm({
-      rCode: order.rCode,
-      fragrance: order.fragrance,
-      unitPrice: order.unitPrice,
+      items: order.items.map((item) => ({ ...item })),
       customer: order.customer,
       phone: order.phone,
-      product: order.product,
-      quantity: order.quantity,
-      amount: order.amount,
       paid: order.paid,
       paymentStatus: order.paymentStatus,
       orderStatus: order.orderStatus,
@@ -533,14 +641,16 @@ export default function Home() {
     setActiveTab("new-order");
     window.setTimeout(() => {
       document.getElementById("panel-new-order")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      document.getElementById("orderRCode")?.focus();
+      document.getElementById(`orderRCode-${order.items[0]?.id}`)?.focus();
     }, 0);
   }
 
   function deleteProduct(id: string) {
     const product = products.find((item) => item.id === id);
     if (!product) return;
-    const isUsed = orders.some((order) => order.rCode === product.rCode);
+    const isUsed = orders.some((order) =>
+      order.items.some((item) => item.rCode === product.rCode),
+    );
     if (isUsed) {
       setNotice(`Cannot delete ${product.rCode}; it is used in an order.`);
       return;
@@ -566,7 +676,8 @@ export default function Home() {
       "Product",
       "Qty",
       "Unit Price",
-      "Amount",
+      "Line Amount",
+      "Order Total",
       "Paid",
       "Balance",
       "Payment",
@@ -575,24 +686,27 @@ export default function Home() {
       "Source",
       "Notes",
     ];
-    const rows = orders.map((order) => [
-      order.orderNo,
-      order.rCode,
-      order.fragrance,
-      order.customer,
-      order.phone,
-      order.product,
-      order.quantity,
-      order.unitPrice,
-      order.amount,
-      order.paid,
-      Math.max(order.amount - order.paid, 0),
-      order.paymentStatus,
-      order.orderStatus,
-      order.dueDate,
-      order.source,
-      order.notes,
-    ]);
+    const rows = orders.flatMap((order) =>
+      order.items.map((item) => [
+        order.orderNo,
+        item.rCode,
+        item.fragrance,
+        order.customer,
+        order.phone,
+        item.product,
+        item.quantity,
+        item.unitPrice,
+        item.amount,
+        order.amount,
+        order.paid,
+        Math.max(order.amount - order.paid, 0),
+        order.paymentStatus,
+        order.orderStatus,
+        order.dueDate,
+        order.source,
+        order.notes,
+      ]),
+    );
     const csv = [headers, ...rows]
       .map((row) =>
         row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(","),
@@ -615,7 +729,7 @@ export default function Home() {
       if (!response.ok) throw new Error("Could not read complete records");
       const payload = (await response.json()) as {
         products?: Product[];
-        orders?: Partial<Order>[];
+        orders?: RawOrder[];
       };
       if (!Array.isArray(payload.products) || !Array.isArray(payload.orders)) {
         throw new Error("Invalid complete records response");
@@ -937,27 +1051,6 @@ export default function Home() {
 
             <div className="order-form-layout">
               <div className="field-stack">
-                <div className="form-grid code-row">
-                  <div className="field">
-                    <label htmlFor="orderRCode">R-code</label>
-                    <RCodePicker
-                      products={products}
-                      value={orderForm.rCode}
-                      onChange={(value) => updateOrderField("rCode", value)}
-                      onCreateProduct={() => setActiveTab("new-r-code")}
-                      onEnlarge={openImageViewer}
-                    />
-                  </div>
-                  <div className={`selected-product-card ${selectedProduct ? "" : "empty"}`}>
-                    <ProductImage product={selectedProduct} onEnlarge={openImageViewer} />
-                    <div>
-                      <span className="selected-product-label">Selected item</span>
-                      <strong>{selectedProduct?.name || "Choose an R-code"}</strong>
-                      {selectedProduct && <span>{currency(selectedProduct.price)}</span>}
-                    </div>
-                  </div>
-                </div>
-
                 <div className="field">
                   <label htmlFor="customer">Customer name</label>
                   <input
@@ -993,36 +1086,143 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="field">
-                  <label htmlFor="product">Product</label>
-                  <input
-                    id="product"
-                    required
-                    readOnly={Boolean(selectedProduct)}
-                    value={orderForm.product}
-                    onChange={(event) => updateOrderField("product", event.target.value)}
-                    placeholder="Choose an R-code first"
-                  />
+                <div className="order-items-section">
+                  <div className="order-items-heading">
+                    <div>
+                      <span className="section-kicker">Items</span>
+                      <h3>Order items</h3>
+                    </div>
+                    <button className="secondary-button" onClick={addOrderItem} type="button">
+                      + Add item
+                    </button>
+                  </div>
+
+                  <div className="order-items-list">
+                    {orderForm.items.map((item, index) => {
+                      const selectedProduct = productByCode.get(normalizeRCode(item.rCode));
+                      return (
+                        <article className="order-item-editor" key={item.id}>
+                          <div className="order-item-editor-heading">
+                            <strong>Item {index + 1}</strong>
+                            {orderForm.items.length > 1 && (
+                              <button
+                                className="danger-button"
+                                onClick={() => removeOrderItem(item.id)}
+                                type="button"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="form-grid code-row">
+                            <div className="field">
+                              <label htmlFor={`orderRCode-${item.id}`}>R-code</label>
+                              <RCodePicker
+                                id={`orderRCode-${item.id}`}
+                                products={products}
+                                value={item.rCode}
+                                onChange={(value) => updateOrderItem(index, "rCode", value)}
+                                onCreateProduct={() => setActiveTab("new-r-code")}
+                                onEnlarge={openImageViewer}
+                              />
+                            </div>
+                            <div className={`selected-product-card ${selectedProduct ? "" : "empty"}`}>
+                              <ProductImage product={selectedProduct} onEnlarge={openImageViewer} />
+                              <div>
+                                <span className="selected-product-label">Selected item</span>
+                                <strong>{selectedProduct?.name || "Choose an R-code"}</strong>
+                                {selectedProduct && <span>{currency(selectedProduct.price)}</span>}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="form-grid two-up">
+                            <div className="field">
+                              <label htmlFor={`product-${item.id}`}>Product</label>
+                              <input
+                                id={`product-${item.id}`}
+                                required
+                                readOnly={Boolean(selectedProduct)}
+                                value={item.product}
+                                onChange={(event) =>
+                                  updateOrderItem(index, "product", event.target.value)
+                                }
+                                placeholder="Choose an R-code first"
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`fragrance-${item.id}`}>Fragrance</label>
+                              <select
+                                id={`fragrance-${item.id}`}
+                                value={item.fragrance}
+                                onChange={(event) =>
+                                  updateOrderItem(index, "fragrance", event.target.value)
+                                }
+                              >
+                                <option value="">Select fragrance</option>
+                                {fragranceOptions.map((fragrance) => (
+                                  <option key={fragrance} value={fragrance}>
+                                    {fragrance}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="form-grid three-up">
+                            <div className="field">
+                              <label htmlFor={`quantity-${item.id}`}>Qty</label>
+                              <input
+                                id={`quantity-${item.id}`}
+                                inputMode="numeric"
+                                min="1"
+                                type="number"
+                                value={item.quantity}
+                                onChange={(event) =>
+                                  updateOrderItem(
+                                    index,
+                                    "quantity",
+                                    numericInputValue(event.target.value),
+                                  )
+                                }
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`unitPrice-${item.id}`}>Rate</label>
+                              <input
+                                id={`unitPrice-${item.id}`}
+                                inputMode="numeric"
+                                readOnly
+                                value={item.unitPrice}
+                              />
+                            </div>
+                            <div className="field">
+                              <label htmlFor={`amount-${item.id}`}>Line amount</label>
+                              <input
+                                id={`amount-${item.id}`}
+                                inputMode="numeric"
+                                min="0"
+                                type="number"
+                                value={item.amount}
+                                onChange={(event) =>
+                                  updateOrderItem(
+                                    index,
+                                    "amount",
+                                    numericInputValue(event.target.value),
+                                  )
+                                }
+                              />
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="field">
-                  <label htmlFor="fragrance">Fragrance</label>
-                  <select
-                    id="fragrance"
-                    value={orderForm.fragrance}
-                    onChange={(event) => updateOrderField("fragrance", event.target.value)}
-                  >
-                    <option value="">Select fragrance</option>
-                    {fragranceOptions.map((fragrance) => (
-                      <option key={fragrance} value={fragrance}>
-                        {fragrance}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="notes">Notes</label>
+                  <label htmlFor="notes">Order notes</label>
                   <textarea
                     id="notes"
                     rows={4}
@@ -1034,50 +1234,26 @@ export default function Home() {
               </div>
 
               <div className="field-stack order-side">
-                <div className="form-grid two-up">
-                  <div className="field">
-                    <label htmlFor="quantity">Qty</label>
-                    <input
-                      id="quantity"
-                      inputMode="numeric"
-                      min="1"
-                      type="number"
-                      value={orderForm.quantity}
-                      onChange={(event) =>
-                        updateOrderField("quantity", numericInputValue(event.target.value))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="unitPrice">Rate</label>
-                    <input id="unitPrice" inputMode="numeric" readOnly value={orderForm.unitPrice} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="amount">Amount</label>
-                    <input
-                      id="amount"
-                      inputMode="numeric"
-                      min="0"
-                      type="number"
-                      value={orderForm.amount}
-                      onChange={(event) =>
-                        updateOrderField("amount", numericInputValue(event.target.value))
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="paid">Paid</label>
-                    <input
-                      id="paid"
-                      inputMode="numeric"
-                      min="0"
-                      type="number"
-                      value={orderForm.paid}
-                      onChange={(event) =>
-                        updateOrderField("paid", numericInputValue(event.target.value))
-                      }
-                    />
-                  </div>
+                <div className="order-total-panel">
+                  <span className="field-label">Order total</span>
+                  <strong>{currency(orderTotal(orderForm.items))}</strong>
+                  <span>
+                    {orderForm.items.length} item{orderForm.items.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="paid">Paid</label>
+                  <input
+                    id="paid"
+                    inputMode="numeric"
+                    min="0"
+                    type="number"
+                    value={orderForm.paid}
+                    onChange={(event) =>
+                      updateOrderField("paid", numericInputValue(event.target.value))
+                    }
+                  />
                 </div>
 
                 <div className="form-grid two-up">
@@ -1219,9 +1395,8 @@ export default function Home() {
                 <thead>
                   <tr>
                     <th scope="col">Order</th>
-                    <th scope="col">R-code</th>
+                    <th scope="col">Items</th>
                     <th scope="col">Customer</th>
-                    <th scope="col">Product</th>
                     <th scope="col">Amount</th>
                     <th scope="col">Payment</th>
                     <th scope="col">Status</th>
@@ -1234,8 +1409,8 @@ export default function Home() {
                     <OrderRow
                       key={order.id}
                       order={order}
-                      image={productByCode.get(order.rCode)?.image || ""}
-                      imageUrl={productByCode.get(order.rCode)?.imageUrl}
+                      image={productByCode.get(order.items[0]?.rCode || "")?.image || ""}
+                      imageUrl={productByCode.get(order.items[0]?.rCode || "")?.imageUrl}
                       onEnlarge={openImageViewer}
                       onEdit={editOrder}
                       onDelete={deleteOrder}
@@ -1250,8 +1425,8 @@ export default function Home() {
                 <OrderCard
                   key={order.id}
                   order={order}
-                  image={productByCode.get(order.rCode)?.image || ""}
-                  imageUrl={productByCode.get(order.rCode)?.imageUrl}
+                  image={productByCode.get(order.items[0]?.rCode || "")?.image || ""}
+                  imageUrl={productByCode.get(order.items[0]?.rCode || "")?.imageUrl}
                   onEnlarge={openImageViewer}
                   onEdit={editOrder}
                   onDelete={deleteOrder}
@@ -1377,12 +1552,14 @@ function ProductImage({
 }
 
 function RCodePicker({
+  id,
   products,
   value,
   onChange,
   onCreateProduct,
   onEnlarge,
 }: {
+  id: string;
   products: Product[];
   value: string;
   onChange: (value: string) => void;
@@ -1454,11 +1631,11 @@ function RCodePicker({
             isOpen && previewProduct ? `rcode-option-${previewProduct.id}` : undefined
           }
           aria-autocomplete="list"
-          aria-controls="rcode-options"
+          aria-controls={`${id}-options`}
           aria-expanded={isOpen}
           aria-haspopup="listbox"
           autoComplete="off"
-          id="orderRCode"
+          id={id}
           onBlur={handleBlur}
           onChange={(event) => {
             setSearch(event.target.value);
@@ -1499,7 +1676,12 @@ function RCodePicker({
           )}
 
           {filteredProducts.length ? (
-            <div aria-label="Available R-codes" className="rcode-option-list" id="rcode-options" role="listbox">
+            <div
+              aria-label="Available R-codes"
+              className="rcode-option-list"
+              id={`${id}-options`}
+              role="listbox"
+            >
               {filteredProducts.map((product, index) => (
                 <button
                   aria-selected={product.rCode === selectedCode}
@@ -1554,25 +1736,22 @@ function OrderRow({
   onDelete: (id: string) => void;
 }) {
   const balance = Math.max(order.amount - order.paid, 0);
+  const firstItem = order.items[0];
   return (
     <tr className="order-row">
       <td className="strong-cell">{order.orderNo}</td>
       <td>
-        <div className="order-code-cell">
-          <ProductImage product={{ image, imageUrl, rCode: order.rCode }} onEnlarge={onEnlarge} />
-          <span className="code-label">{order.rCode}</span>
+        <div className="order-item-table-cell">
+          <ProductImage
+            product={{ image, imageUrl, rCode: firstItem?.rCode || "R" }}
+            onEnlarge={onEnlarge}
+          />
+          <OrderItemsSummary items={order.items} />
         </div>
       </td>
       <td>
         <p className="strong-cell">{order.customer}</p>
         <p className="muted-line">{order.phone || "No phone"}</p>
-      </td>
-      <td>
-        <p>{order.product}</p>
-        {order.fragrance && <p className="muted-line">Fragrance: {order.fragrance}</p>}
-        <p className="muted-line">
-          Qty {order.quantity} x {currency(order.unitPrice)} via {order.source}
-        </p>
       </td>
       <td>
         <p className="strong-cell">{currency(order.amount)}</p>
@@ -1623,14 +1802,18 @@ function OrderCard({
   onDelete: (id: string) => void;
 }) {
   const balance = Math.max(order.amount - order.paid, 0);
+  const firstItem = order.items[0];
   return (
     <article className="order-card">
       <div className="order-card-heading">
         <div className="order-card-identity">
-          <ProductImage product={{ image, imageUrl, rCode: order.rCode }} onEnlarge={onEnlarge} />
+          <ProductImage
+            product={{ image, imageUrl, rCode: firstItem?.rCode || "R" }}
+            onEnlarge={onEnlarge}
+          />
           <div>
             <p className="code-label">
-              {order.orderNo} | {order.rCode}
+              {order.orderNo} | {order.items.map((item) => item.rCode).join(" · ")}
             </p>
             <h3>{order.customer}</h3>
             <p className="muted-line">{order.phone || "No phone"}</p>
@@ -1638,11 +1821,9 @@ function OrderCard({
         </div>
         <Chip label={order.orderStatus} />
       </div>
-      <p className="order-product">{order.product}</p>
-      {order.fragrance && <p className="muted-line">Fragrance: {order.fragrance}</p>}
+      <OrderItemsSummary items={order.items} />
       <p className="muted-line">
-        Qty {order.quantity} x {currency(order.unitPrice)} | {order.source} | Due{" "}
-        {order.dueDate || "-"}
+        {order.source} | Due {order.dueDate || "-"}
       </p>
       <div className="mini-stat-grid">
         <MiniStat label="Amount" value={currency(order.amount)} />
@@ -1669,6 +1850,25 @@ function OrderCard({
         </button>
       </div>
     </article>
+  );
+}
+
+function OrderItemsSummary({ items }: { items: OrderItem[] }) {
+  return (
+    <div className="order-items-summary">
+      {items.map((item) => (
+        <div className="order-item-summary" key={item.id}>
+          <div className="order-item-summary-title">
+            <span className="code-label">{item.rCode}</span>
+            <strong>{item.product}</strong>
+          </div>
+          <p className="muted-line">
+            Qty {item.quantity} x {currency(item.unitPrice)} = {currency(item.amount)}
+            {item.fragrance ? ` | ${item.fragrance}` : ""}
+          </p>
+        </div>
+      ))}
+    </div>
   );
 }
 

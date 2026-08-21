@@ -554,9 +554,66 @@ label:has(input:focus-visible) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.form-grid.three-up {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .field-stack {
   display: grid;
   gap: 18px;
+}
+
+.order-items-section,
+.order-items-list {
+  display: grid;
+  gap: 14px;
+}
+
+.order-items-heading,
+.order-item-editor-heading {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.order-items-heading h3 {
+  font-size: 18px;
+  font-weight: 740;
+  letter-spacing: -0.03em;
+  margin: 6px 0 0;
+}
+
+.order-item-editor {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.order-item-editor .selected-product-card {
+  background: var(--surface);
+}
+
+.order-total-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+}
+
+.order-total-panel strong {
+  color: var(--accent-deep);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 26px;
+  letter-spacing: -0.06em;
+}
+
+.order-total-panel > span:last-child {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .field {
@@ -1162,6 +1219,42 @@ label:has(input:focus-visible) {
   gap: 9px;
 }
 
+.order-item-table-cell {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  min-width: 260px;
+}
+
+.order-items-summary {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.order-item-summary + .order-item-summary {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.order-item-summary-title {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.order-item-summary-title strong {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-item-summary .muted-line {
+  margin-top: 3px;
+}
+
 .orders-table .product-image {
   height: 34px;
   width: 34px;
@@ -1321,6 +1414,7 @@ label:has(input:focus-visible) {
   .metric-grid,
   .product-grid,
   .form-grid.two-up,
+  .form-grid.three-up,
   .order-form-layout {
     grid-template-columns: 1fr;
   }
@@ -1376,6 +1470,11 @@ label:has(input:focus-visible) {
   .code-row {
     grid-template-columns: 1fr;
   }
+
+  .order-items-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1417,7 +1516,8 @@ label:has(input:focus-visible) {
   }
 
   .order-card,
-  .workspace-panel {
+  .workspace-panel,
+  .order-item-editor {
     padding: 14px;
   }
 
