@@ -12,6 +12,7 @@ import {
 import {
   derivePaymentStatus,
   isActiveOrderStatus,
+  matchesRCodeSearch,
   normalizeRCode,
   orderTotal,
 } from "../lib/order-logic";
@@ -279,6 +280,7 @@ export default function Home() {
   const [backupStatus, setBackupStatus] = useState<BackupStatus>("idle");
   const imageUploadIdRef = useRef(0);
   const saveRequestRef = useRef(0);
+  const saveChainRef = useRef(Promise.resolve());
   const imageViewerTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -424,30 +426,36 @@ export default function Home() {
     if (!isLoaded || !databaseConnected || !isDirty) return;
     const requestId = ++saveRequestRef.current;
     const saveTimer = window.setTimeout(async () => {
-      setIsSyncing(true);
-      setSyncError(false);
-      try {
-        const productsForSave = products.map((product) => {
-          const snapshot = { ...product };
-          delete snapshot.imageUrl;
-          if (!snapshot.image) delete snapshot.image;
-          return snapshot;
+      const productsForSave = products.map((product) => {
+        const snapshot = { ...product };
+        delete snapshot.imageUrl;
+        if (!snapshot.image) delete snapshot.image;
+        return snapshot;
+      });
+      const snapshot = { products: productsForSave, orders };
+      saveChainRef.current = saveChainRef.current
+        .catch(() => {})
+        .then(async () => {
+          if (requestId !== saveRequestRef.current) return;
+          setIsSyncing(true);
+          setSyncError(false);
+          try {
+            const response = await fetch("/api/records", {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(snapshot),
+            });
+            if (!response.ok) throw new Error("Could not save records");
+            if (requestId === saveRequestRef.current) setIsDirty(false);
+          } catch {
+            if (requestId === saveRequestRef.current) {
+              setSyncError(true);
+              setNotice("Could not save changes to the database.");
+            }
+          } finally {
+            if (requestId === saveRequestRef.current) setIsSyncing(false);
+          }
         });
-        const response = await fetch("/api/records", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ products: productsForSave, orders }),
-        });
-        if (!response.ok) throw new Error("Could not save records");
-        if (requestId === saveRequestRef.current) setIsDirty(false);
-      } catch {
-        if (requestId === saveRequestRef.current) {
-          setSyncError(true);
-          setNotice("Could not save changes to the database.");
-        }
-      } finally {
-        if (requestId === saveRequestRef.current) setIsSyncing(false);
-      }
     }, 250);
 
     return () => window.clearTimeout(saveTimer);
@@ -678,6 +686,24 @@ export default function Home() {
     setIsPreparingImage(false);
     setProductForm(initialProductForm);
     setEditingProductId(null);
+  }
+
+  function startNewOrder() {
+    resetOrderForm();
+    setActiveTab("new-order");
+    window.setTimeout(() => {
+      document.getElementById("panel-new-order")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("customer")?.focus();
+    }, 0);
+  }
+
+  function startNewProduct() {
+    resetProductForm();
+    setActiveTab("new-r-code");
+    window.setTimeout(() => {
+      document.getElementById("panel-new-r-code")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("catalogueRCode")?.focus();
+    }, 0);
   }
 
   function openImageViewer(src: string, alt: string) {
@@ -935,6 +961,10 @@ export default function Home() {
   }
 
   async function signOut() {
+    if ((isDirty || isSyncing) && !syncError) {
+      setNotice("Changes are still saving. Wait until the workspace says Saved before signing out.");
+      return;
+    }
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
@@ -994,6 +1024,10 @@ export default function Home() {
     if (!file) return;
     if (!databaseConnected) {
       setNotice("Database unavailable. Reconnect before restoring a backup.");
+      event.target.value = "";
+      return;
+    }
+    if (isDirty && !window.confirm("Unsaved changes will be replaced by this backup. Continue?")) {
       event.target.value = "";
       return;
     }
@@ -1213,7 +1247,7 @@ export default function Home() {
                 <h2>Sales and orders</h2>
                 <p>Live totals from the order book. Delivered orders are counted as fulfilled, not active.</p>
               </div>
-              <button className="primary-button" onClick={() => setActiveTab("new-order")} type="button">
+              <button className="primary-button" onClick={startNewOrder} type="button">
                 New order
               </button>
             </div>
@@ -1578,7 +1612,7 @@ export default function Home() {
                                 products={products}
                                 value={item.rCode}
                                 onChange={(value) => updateOrderItem(index, "rCode", value)}
-                                onCreateProduct={() => setActiveTab("new-r-code")}
+                                onCreateProduct={startNewProduct}
                                 onEnlarge={openImageViewer}
                               />
                             </div>
@@ -1824,7 +1858,7 @@ export default function Home() {
               <EmptyState
                 actionLabel="Add an R-code"
                 detail="Give each piece a code, price, and optional photo."
-                onAction={() => setActiveTab("new-r-code")}
+                onAction={startNewProduct}
                 text="No R-codes yet"
               />
             )}
@@ -1945,7 +1979,8 @@ export default function Home() {
                     setStatusFilter("All");
                     setQueueFilter("all");
                   } else {
-                    setActiveTab(products.length ? "new-order" : "new-r-code");
+                    if (products.length) startNewOrder();
+                    else startNewProduct();
                   }
                 }}
                 text={orderEmptyText}
@@ -2105,43 +2140,62 @@ function RCodePicker({
 }) {
   const pickerRef = useRef<HTMLDivElement>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState("");
+  const [searchText, setSearchText] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const editingOriginalValueRef = useRef(value);
+  const isEditingRef = useRef(false);
+  const clearedExplicitlyRef = useRef(false);
   const selectedCode = normalizeRCode(value);
-  const searchTerm = search.trim().toLowerCase();
   const filteredProducts = products.filter((product) => {
-    if (!searchTerm) return true;
-    return [product.rCode, product.name].some((field) =>
-      field.toLowerCase().includes(searchTerm),
-    );
+    return matchesRCodeSearch(product.rCode, product.name, searchText);
   });
-  const selectedIndex = Math.max(
-    0,
-    filteredProducts.findIndex((product) => normalizeRCode(product.rCode) === selectedCode),
+  const selectedIndex = filteredProducts.findIndex(
+    (product) => normalizeRCode(product.rCode) === selectedCode,
   );
-  const previewProduct = filteredProducts[highlightedIndex] || filteredProducts[selectedIndex];
+  const previewProduct =
+    filteredProducts[highlightedIndex] ||
+    (selectedIndex >= 0 ? filteredProducts[selectedIndex] : undefined);
 
   function openPicker() {
     setIsOpen(true);
-    setHighlightedIndex(selectedIndex);
+    setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    editingOriginalValueRef.current = value;
+    isEditingRef.current = false;
+    clearedExplicitlyRef.current = false;
   }
 
   function chooseProduct(product: Product) {
-    onChange(normalizeRCode(product.rCode));
-    setSearch("");
+    const nextValue = normalizeRCode(product.rCode);
+    onChange(nextValue);
+    editingOriginalValueRef.current = nextValue;
+    isEditingRef.current = false;
+    clearedExplicitlyRef.current = false;
+    setSearchText("");
     setHighlightedIndex(0);
     setIsOpen(false);
   }
 
   function handleBlur() {
     window.setTimeout(() => {
-      if (!pickerRef.current?.contains(document.activeElement)) setIsOpen(false);
+      if (pickerRef.current?.contains(document.activeElement)) return;
+      if (searchText.trim() && filteredProducts.length === 1) {
+        chooseProduct(filteredProducts[0]);
+        return;
+      }
+      setIsOpen(false);
     }, 0);
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (
+        isEditingRef.current &&
+        !clearedExplicitlyRef.current
+      ) {
+        onChange(editingOriginalValueRef.current);
+      }
+      setSearchText("");
       setIsOpen(false);
       return;
     }
@@ -2176,11 +2230,23 @@ function RCodePicker({
           onBlur={handleBlur}
           onChange={(event) => {
             const typedValue = event.target.value;
-            const nextValue = /^(R-?)?\d+$/i.test(typedValue.trim())
-              ? normalizeRCode(typedValue)
-              : typedValue;
-            setSearch(typedValue);
-            onChange(nextValue);
+            if (!isEditingRef.current) {
+              editingOriginalValueRef.current = value;
+              isEditingRef.current = true;
+              clearedExplicitlyRef.current = false;
+            }
+            if (!typedValue) clearedExplicitlyRef.current = true;
+            setSearchText(typedValue);
+            const matchingProducts = typedValue.trim()
+              ? products.filter((product) =>
+                  matchesRCodeSearch(product.rCode, product.name, typedValue),
+                )
+              : [];
+            onChange(
+              matchingProducts.length === 1
+                ? normalizeRCode(matchingProducts[0].rCode)
+                : "",
+            );
             setIsOpen(true);
             setHighlightedIndex(0);
           }}
@@ -2189,7 +2255,7 @@ function RCodePicker({
           placeholder={products.length ? "Search by R-code or item" : "Add an R-code first"}
           required
           role="combobox"
-          value={value}
+          value={searchText || value}
         />
         <button
           aria-label="Show all R-codes"
@@ -2225,7 +2291,7 @@ function RCodePicker({
             >
               {filteredProducts.map((product, index) => (
                 <button
-                  aria-selected={product.rCode === selectedCode}
+                  aria-selected={normalizeRCode(product.rCode) === selectedCode}
                   className={`rcode-option ${previewProduct?.id === product.id ? "highlighted" : ""}`}
                   id={`rcode-option-${product.id}`}
                   key={product.id}
@@ -2245,7 +2311,7 @@ function RCodePicker({
               ))}
             </div>
           ) : products.length ? (
-            <p className="rcode-empty">No R-codes match “{search}”.</p>
+            <p className="rcode-empty">No R-codes match “{searchText}”.</p>
           ) : (
             <div className="rcode-empty">
               <strong>No R-codes yet</strong>

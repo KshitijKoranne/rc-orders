@@ -206,7 +206,7 @@ h3 {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in oklch, var(--color-paper) 95%, transparent);
+  background: var(--color-paper);
   border-top: 4px solid var(--color-moss);
   border-bottom: var(--hairline);
 }
@@ -2034,7 +2034,7 @@ h3 {
   }
 
   .tool-button {
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .work-summary-lead {
