@@ -11,11 +11,13 @@ Private, single-user order and product manager for Rithya Creations.
 
 ## Data and access
 
-There is no login because this is a private, single-user workspace. Products
-and orders are stored in PostgreSQL on the VPS through the `DATABASE_URL`
-environment variable. The application creates its two tables on first use and
-keeps the database private on Coolify's internal network. Use **Backup** to
-download an additional JSON copy before making a large change.
+The workbench requires the `RITHYA_ACCESS_PASSWORD` environment secret. The
+password is never committed to the repository. Sessions use an HttpOnly cookie
+and expire after five minutes without activity. Products and orders are stored
+in PostgreSQL on the VPS through the `DATABASE_URL` environment variable. The
+application creates its two tables on first use and keeps the database private
+on Coolify's internal network. Use **Backup** to download an additional JSON
+copy before making a large change.
 
 Because customer details can include phone numbers, keep the VPS route private
 with a VPN, IP allowlist, or reverse-proxy access control if the app is reachable

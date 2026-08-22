@@ -2,6 +2,11 @@ import { getDb } from "../../../db";
 import { sql } from "drizzle-orm";
 import { orders as ordersTable, products as productsTable } from "../../../db/schema";
 import { derivePaymentStatus, orderTotal } from "../../../lib/order-logic";
+import {
+  refreshSessionFromRequest,
+  unauthorizedResponse,
+  withSessionCookie,
+} from "../../../lib/auth";
 
 export const runtime = "nodejs";
 
@@ -171,6 +176,9 @@ function mergeStoredImage(
 }
 
 export async function GET(request: Request) {
+  const session = await refreshSessionFromRequest(request);
+  if (!session) return unauthorizedResponse(request);
+
   const includeImages = new URL(request.url).searchParams.get("includeImages") === "1";
 
   try {
@@ -200,10 +208,10 @@ export async function GET(request: Request) {
       db.select().from(ordersTable),
     ]);
 
-    return Response.json(
+    return withSessionCookie(Response.json(
       { products, orders: storedOrders.map(publicOrder) },
       { headers: { "Cache-Control": "no-store" } },
-    );
+    ), session, request);
   } catch (error) {
     console.error("Could not read Rithya Creations records", error);
     return errorResponse("Database unavailable", 503);
@@ -211,6 +219,9 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const session = await refreshSessionFromRequest(request);
+  if (!session) return unauthorizedResponse(request);
+
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > maxPayloadLength) return errorResponse("Backup is too large", 413);
 
@@ -245,7 +256,7 @@ export async function PUT(request: Request) {
       if (orders.length) await transaction.insert(ordersTable).values(orders);
     });
 
-    return Response.json({ ok: true });
+    return withSessionCookie(Response.json({ ok: true }), session, request);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Invalid")) {
       return errorResponse(error.message, 400);

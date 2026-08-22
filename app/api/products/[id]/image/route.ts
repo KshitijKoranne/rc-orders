@@ -3,6 +3,11 @@ import { Buffer } from "node:buffer";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { products as productsTable } from "../../../../../db/schema";
+import {
+  refreshSessionFromRequest,
+  unauthorizedResponse,
+  withSessionCookie,
+} from "../../../../../lib/auth";
 
 export const runtime = "nodejs";
 
@@ -33,6 +38,9 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const session = await refreshSessionFromRequest(request);
+  if (!session) return unauthorizedResponse(request);
+
   try {
     const { id } = await params;
     if (!id || id.length > 120) return errorResponse("Invalid product id", 400);
@@ -71,7 +79,7 @@ export async function GET(
       return new Response(null, { status: 304, headers });
     }
 
-    return new Response(decoded.bytes, { headers });
+    return withSessionCookie(new Response(decoded.bytes, { headers }), session, request);
   } catch (error) {
     console.error("Could not read product image", error);
     return errorResponse("Image service unavailable", 503);

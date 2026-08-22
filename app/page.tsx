@@ -143,6 +143,7 @@ const initialProductForm: ProductForm = {
 };
 
 const maxImageDataLength = 20_000_000;
+const clientIdleSessionMs = 5 * 60 * 1000;
 
 const tabItems: Array<{ key: TabKey; label: string }> = [
   { key: "dashboard", label: "Dashboard" },
@@ -279,6 +280,70 @@ export default function Home() {
   const imageUploadIdRef = useRef(0);
   const saveRequestRef = useRef(0);
   const imageViewerTriggerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    let lastActivityAt = Date.now();
+    let lastHeartbeatAt = 0;
+    let heartbeatInFlight = false;
+    let isRedirecting = false;
+
+    const redirectToLogin = () => {
+      if (isRedirecting) return;
+      isRedirecting = true;
+      void fetch("/api/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
+      window.location.replace("/login?reason=timeout");
+    };
+
+    const refreshSession = async () => {
+      const now = Date.now();
+      if (now - lastActivityAt >= clientIdleSessionMs) {
+        redirectToLogin();
+        return;
+      }
+      if (heartbeatInFlight || now - lastHeartbeatAt < 30_000) return;
+      lastHeartbeatAt = now;
+      heartbeatInFlight = true;
+      try {
+        const response = await fetch("/api/auth/heartbeat", {
+          method: "POST",
+          cache: "no-store",
+        });
+        if (response.status === 401) redirectToLogin();
+      } catch {
+        // Keep the local idle timer authoritative if the network is briefly unavailable.
+      } finally {
+        heartbeatInFlight = false;
+      }
+    };
+
+    const markActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityAt >= clientIdleSessionMs) {
+        redirectToLogin();
+        return;
+      }
+      lastActivityAt = now;
+      void refreshSession();
+    };
+
+    const activityEvents = ["pointerdown", "keydown", "touchstart", "mousemove"] as const;
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, markActivity, { passive: true });
+    });
+    const heartbeatTimer = window.setInterval(() => void refreshSession(), 30_000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void refreshSession();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.clearInterval(heartbeatTimer);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, markActivity);
+      });
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (!imageViewer) return;
@@ -869,6 +934,14 @@ export default function Home() {
     downloadFile(csv, "rithya-orders.csv", "text/csv");
   }
 
+  async function signOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.replace("/login");
+    }
+  }
+
   async function backupJson() {
     if (!databaseConnected || isDirty || isSyncing) {
       setBackupStatus("error");
@@ -1072,6 +1145,9 @@ export default function Home() {
                 onChange={restoreJson}
               />
             </label>
+            <button className="tool-button" onClick={signOut} type="button">
+              Sign out
+            </button>
           </div>
         </div>
       </header>
