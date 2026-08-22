@@ -9,6 +9,12 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  derivePaymentStatus,
+  isActiveOrderStatus,
+  normalizeRCode,
+  orderTotal,
+} from "../lib/order-logic";
 
 type PaymentStatus = "Pending" | "Partial" | "Paid";
 type OrderStatus = "New" | "In Progress" | "Ready" | "Delivered" | "Cancelled";
@@ -40,6 +46,7 @@ type Order = {
   customer: string;
   phone: string;
   items: OrderItem[];
+  courierCharges: number;
   amount: number;
   paid: number;
   paymentStatus: PaymentStatus;
@@ -69,10 +76,11 @@ type OrderForm = Omit<
   "id" | "orderNo" | "createdAt" | "items" | "amount" | "paid"
 > & {
   items: Array<OrderItemForm & { id: string }>;
+  courierCharges: NumericInput;
   paid: NumericInput;
 };
 type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
-type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
+type TabKey = "dashboard" | "new-r-code" | "new-order" | "catalogue" | "orders";
 type QueueFilter = "all" | "due-today" | "overdue" | "ready" | "payment-due";
 type ImageViewerState = { src: string; alt: string };
 type BackupStatus = "idle" | "preparing" | "saving" | "error";
@@ -116,6 +124,7 @@ function makeInitialOrderForm(): OrderForm {
     items: [makeEmptyOrderItem()],
     customer: "",
     phone: "",
+    courierCharges: 0,
     paid: 0,
     paymentStatus: "Pending",
     orderStatus: "New",
@@ -136,6 +145,7 @@ const initialProductForm: ProductForm = {
 const maxImageDataLength = 20_000_000;
 
 const tabItems: Array<{ key: TabKey; label: string }> = [
+  { key: "dashboard", label: "Dashboard" },
   { key: "new-r-code", label: "New R-code" },
   { key: "new-order", label: "New order" },
   { key: "catalogue", label: "Catalogue" },
@@ -158,26 +168,6 @@ function numericInputValue(value: string): NumericInput {
 
 function makeId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function normalizeRCode(value: string) {
-  const trimmed = value.trim().toUpperCase();
-  if (!trimmed) return "";
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits && /^(R-?)?\d+$/.test(trimmed)) {
-    return `R-${digits.padStart(4, "0")}`;
-  }
-  return trimmed;
-}
-
-function derivePaymentStatus(amount: number, paid: number): PaymentStatus {
-  if (paid <= 0) return "Pending";
-  if (paid >= amount && amount > 0) return "Paid";
-  return "Partial";
-}
-
-function orderTotal(items: Array<{ amount: NumericInput }>) {
-  return items.reduce((total, item) => total + (Number(item.amount) || 0), 0);
 }
 
 function readAsDataUrl(blob: Blob) {
@@ -244,7 +234,8 @@ function migrateOrder(raw: RawOrder): Order {
       amount: Number(item.amount) || itemUnitPrice * itemQuantity,
     };
   });
-  const amount = orderTotal(items);
+  const courierCharges = Number(raw.courierCharges) || 0;
+  const amount = orderTotal(items, courierCharges);
   const paid = Number(raw.paid) || 0;
   return {
     id: raw.id || makeId("order"),
@@ -252,6 +243,7 @@ function migrateOrder(raw: RawOrder): Order {
     customer: raw.customer || "",
     phone: raw.phone || "",
     items,
+    courierCharges,
     amount,
     paid,
     paymentStatus: derivePaymentStatus(amount, paid),
@@ -278,7 +270,7 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState(false);
   const [notice, setNotice] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("orders");
+  const [activeTab, setActiveTab] = useState<TabKey>("dashboard");
   const [isDirty, setIsDirty] = useState(false);
   const [isPreparingImage, setIsPreparingImage] = useState(false);
   const [imageViewer, setImageViewer] = useState<ImageViewerState | null>(null);
@@ -397,20 +389,26 @@ export default function Home() {
   }, [databaseConnected, isDirty, isLoaded, orders, products]);
 
   const productByCode = useMemo(() => {
-    return new Map(products.map((product) => [product.rCode, product]));
+    const byCode = new Map<string, Product>();
+    products.forEach((product) => {
+      byCode.set(product.rCode, product);
+      const normalized = normalizeRCode(product.rCode);
+      if (normalized) byCode.set(normalized, product);
+    });
+    return byCode;
   }, [products]);
 
   const queueCounts = useMemo(() => {
     const today = localDateKey();
-    const actionable = orders.filter(
-      (order) => order.orderStatus !== "Cancelled" && order.orderStatus !== "Delivered",
-    );
+    const actionable = orders.filter((order) => isActiveOrderStatus(order.orderStatus));
     return {
       all: orders.length,
       dueToday: actionable.filter((order) => order.dueDate === today).length,
       overdue: actionable.filter((order) => order.dueDate && order.dueDate < today).length,
       ready: actionable.filter((order) => order.orderStatus === "Ready").length,
-      paymentDue: actionable.filter((order) => order.amount > order.paid).length,
+      paymentDue: orders.filter(
+        (order) => order.orderStatus !== "Cancelled" && order.amount > order.paid,
+      ).length,
     };
   }, [orders]);
 
@@ -432,42 +430,105 @@ export default function Home() {
       const matchesSearch = !search || matchesOrderFields || matchesItemFields;
       const matchesStatus =
         statusFilter === "All" || order.orderStatus === statusFilter;
-      const isActionable =
-        order.orderStatus !== "Cancelled" && order.orderStatus !== "Delivered";
+      const isActionable = isActiveOrderStatus(order.orderStatus);
       const matchesQueue =
         queueFilter === "all" ||
         (queueFilter === "due-today" && isActionable && order.dueDate === today) ||
         (queueFilter === "overdue" && isActionable && order.dueDate && order.dueDate < today) ||
         (queueFilter === "ready" && isActionable && order.orderStatus === "Ready") ||
-        (queueFilter === "payment-due" && isActionable && order.amount > order.paid);
+        (queueFilter === "payment-due" && order.orderStatus !== "Cancelled" && order.amount > order.paid);
       return matchesSearch && matchesStatus && matchesQueue;
     });
   }, [orders, query, queueFilter, statusFilter]);
 
   const totals = useMemo(() => {
-    const active = orders.filter((order) => order.orderStatus !== "Cancelled");
+    const nonCancelled = orders.filter((order) => order.orderStatus !== "Cancelled");
+    const active = nonCancelled.filter((order) => isActiveOrderStatus(order.orderStatus));
     return {
       count: active.length,
       catalogue: products.length,
-      revenue: active.reduce((sum, order) => sum + Number(order.amount), 0),
-      collected: active.reduce((sum, order) => sum + Number(order.paid), 0),
-      pending: active.reduce(
+      revenue: nonCancelled.reduce((sum, order) => sum + Number(order.amount), 0),
+      collected: nonCancelled.reduce((sum, order) => sum + Number(order.paid), 0),
+      pending: nonCancelled.reduce(
         (sum, order) =>
           sum + Math.max(Number(order.amount) - Number(order.paid), 0),
         0,
       ),
       ready: active.filter((order) => order.orderStatus === "Ready").length,
+      fulfilled: orders.filter((order) => order.orderStatus === "Delivered").length,
     };
   }, [orders, products]);
 
+  const dashboardStatusCounts = useMemo(
+    () =>
+      orderStatuses.map((status) => ({
+        status,
+        count: orders.filter((order) => order.orderStatus === status).length,
+      })),
+    [orders],
+  );
+
+  const dashboardDonut = useMemo(() => {
+    const radius = 52;
+    const circumference = 2 * Math.PI * radius;
+    const total = dashboardStatusCounts.reduce((sum, segment) => sum + segment.count, 0);
+    const nonEmptySegments = dashboardStatusCounts.filter((segment) => segment.count > 0);
+    return {
+      circumference,
+      total,
+      segments: nonEmptySegments.map((segment, index) => {
+        const length = (segment.count / total) * circumference;
+        const offset = nonEmptySegments
+          .slice(0, index)
+          .reduce((sum, previous) => sum + (previous.count / total) * circumference, 0);
+        return { ...segment, length, offset };
+      }),
+    };
+  }, [dashboardStatusCounts]);
+
+  const revenueByMonth = useMemo(() => {
+    const today = new Date();
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      return {
+        key,
+        label: new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date),
+        value: 0,
+      };
+    });
+    const monthByKey = new Map(months.map((month) => [month.key, month]));
+    orders.forEach((order) => {
+      if (order.orderStatus === "Cancelled") return;
+      const date = new Date(order.createdAt);
+      if (Number.isNaN(date.getTime())) return;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const month = monthByKey.get(key);
+      if (month) month.value += Math.max(Number(order.paid), 0);
+    });
+    return months;
+  }, [orders]);
+
+  const maxMonthlyRevenue = Math.max(...revenueByMonth.map((month) => month.value), 1);
+  const recentOrders = useMemo(
+    () =>
+      [...orders]
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .slice(0, 5),
+    [orders],
+  );
+
   function updateOrderField(
     field: Exclude<keyof OrderForm, "items">,
-    value: string | number | PaymentStatus | OrderStatus,
+    value: string | number | PaymentStatus | OrderStatus | NumericInput,
   ) {
     setOrderForm((current) => {
       const next = { ...current, [field]: value };
-      if (field === "paid") {
-        next.paymentStatus = derivePaymentStatus(orderTotal(next.items), Number(value));
+      if (field === "paid" || field === "courierCharges") {
+        next.paymentStatus = derivePaymentStatus(
+          orderTotal(next.items, field === "courierCharges" ? Number(value) : next.courierCharges),
+          Number(next.paid),
+        );
       }
       return next;
     });
@@ -485,7 +546,7 @@ export default function Home() {
         if (field === "rCode") {
           const product = productByCode.get(normalizeRCode(String(value)));
           if (product) {
-            next.rCode = product.rCode;
+            next.rCode = normalizeRCode(product.rCode);
             next.product = product.name;
             next.unitPrice = product.price;
             next.amount = product.price * Number(next.quantity || 1);
@@ -506,16 +567,21 @@ export default function Home() {
       return {
         ...current,
         items,
-        paymentStatus: derivePaymentStatus(orderTotal(items), Number(current.paid)),
+        paymentStatus: derivePaymentStatus(
+          orderTotal(items, current.courierCharges),
+          Number(current.paid),
+        ),
       };
     });
   }
 
   function addOrderItem() {
+    const newItem = makeEmptyOrderItem();
     setOrderForm((current) => ({
       ...current,
-      items: [...current.items, makeEmptyOrderItem()],
+      items: [newItem, ...current.items],
     }));
+    window.setTimeout(() => document.getElementById(`orderRCode-${newItem.id}`)?.focus(), 0);
   }
 
   function removeOrderItem(id: string) {
@@ -525,7 +591,10 @@ export default function Home() {
       return {
         ...current,
         items,
-        paymentStatus: derivePaymentStatus(orderTotal(items), Number(current.paid)),
+        paymentStatus: derivePaymentStatus(
+          orderTotal(items, current.courierCharges),
+          Number(current.paid),
+        ),
       };
     });
   }
@@ -575,7 +644,7 @@ export default function Home() {
 
     const duplicate = products.find(
       (product) =>
-        product.rCode === cleanProduct.rCode && product.id !== editingProductId,
+        normalizeRCode(product.rCode) === cleanProduct.rCode && product.id !== editingProductId,
     );
     if (duplicate) {
       setNotice(`${cleanProduct.rCode} already exists in the catalogue.`);
@@ -623,12 +692,18 @@ export default function Home() {
         amount: Number(item.amount) || unitPrice * quantity,
       };
     });
-    const amount = orderTotal(cleanItems);
+    const courierCharges = Number(orderForm.courierCharges) || 0;
+    if (courierCharges < 0) {
+      setNotice("Courier charges cannot be negative.");
+      return;
+    }
+    const amount = orderTotal(cleanItems, courierCharges);
     const cleanOrder = {
       ...orderForm,
       customer: orderForm.customer.trim(),
       phone: orderForm.phone.trim(),
       items: cleanItems,
+      courierCharges,
       source: orderForm.source.trim() || "Direct",
       notes: orderForm.notes.trim(),
       amount,
@@ -698,6 +773,7 @@ export default function Home() {
       items: order.items.map((item) => ({ ...item })),
       customer: order.customer,
       phone: order.phone,
+      courierCharges: order.courierCharges,
       paid: order.paid,
       paymentStatus: order.paymentStatus,
       orderStatus: order.orderStatus,
@@ -721,7 +797,7 @@ export default function Home() {
     const product = products.find((item) => item.id === id);
     if (!product) return;
     const isUsed = orders.some((order) =>
-      order.items.some((item) => item.rCode === product.rCode),
+      order.items.some((item) => normalizeRCode(item.rCode) === normalizeRCode(product.rCode)),
     );
     if (isUsed) {
       setNotice(`Cannot delete ${product.rCode}; it is used in an order.`);
@@ -753,6 +829,7 @@ export default function Home() {
       "Qty",
       "Unit Price",
       "Line Amount",
+      "Courier Charges",
       "Order Total",
       "Paid",
       "Balance",
@@ -773,6 +850,7 @@ export default function Home() {
         item.quantity,
         item.unitPrice,
         item.amount,
+        order.courierCharges,
         order.amount,
         order.paid,
         Math.max(order.amount - order.paid, 0),
@@ -1046,6 +1124,191 @@ export default function Home() {
           </div>
         </div>
 
+        {activeTab === "dashboard" && (
+          <section
+            aria-labelledby="tab-dashboard"
+            className="workspace-panel content-panel dashboard-panel"
+            id="panel-dashboard"
+            role="tabpanel"
+          >
+            <div className="dashboard-intro">
+              <div>
+                <span className="section-kicker">Overview</span>
+                <h2>Sales and orders</h2>
+                <p>Live totals from the order book. Delivered orders are counted as fulfilled, not active.</p>
+              </div>
+              <button className="primary-button" onClick={() => setActiveTab("new-order")} type="button">
+                New order
+              </button>
+            </div>
+
+            <div className="dashboard-metrics">
+              <DashboardMetric
+                label="Total earned"
+                note="Payments recorded"
+                value={currency(totals.collected)}
+              />
+              <DashboardMetric
+                label="Pending orders"
+                note="New, in progress, or ready"
+                value={String(totals.count)}
+              />
+              <DashboardMetric
+                label="Fulfilled orders"
+                note="Status: Delivered"
+                tone="moss"
+                value={String(totals.fulfilled)}
+              />
+              <DashboardMetric
+                label="Outstanding"
+                note="Balance on non-cancelled orders"
+                tone="warn"
+                value={currency(totals.pending)}
+              />
+            </div>
+
+            <div className="dashboard-chart-grid">
+              <section className="dashboard-card" aria-labelledby="status-chart-title">
+                <div className="dashboard-card-heading">
+                  <div>
+                    <span className="section-kicker">Order book</span>
+                    <h3 id="status-chart-title">Status mix</h3>
+                  </div>
+                  <span className="dashboard-card-note">{dashboardDonut.total} total</span>
+                </div>
+                <div className="donut-layout">
+                  <div className="donut-visual">
+                    <svg aria-label="Order status distribution" className="donut-chart" role="img" viewBox="0 0 128 128">
+                      <circle className="donut-track" cx="64" cy="64" r="52" />
+                      {dashboardDonut.segments.map((segment) => (
+                        <circle
+                          className={`donut-segment ${statusClass(segment.status)}`}
+                          cx="64"
+                          cy="64"
+                          key={segment.status}
+                          r="52"
+                          style={{
+                            strokeDasharray: `${segment.length} ${dashboardDonut.circumference - segment.length}`,
+                            strokeDashoffset: -segment.offset,
+                          }}
+                        />
+                      ))}
+                    </svg>
+                    <div className="donut-center">
+                      <strong>{dashboardDonut.total}</strong>
+                      <span>orders</span>
+                    </div>
+                  </div>
+                  <ul className="status-legend">
+                    {dashboardStatusCounts.map((segment) => (
+                      <li key={segment.status}>
+                        <span aria-hidden="true" className={`status-dot ${statusClass(segment.status)}`} />
+                        <span>{segment.status}</span>
+                        <strong>{segment.count}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </section>
+
+              <section className="dashboard-card" aria-labelledby="revenue-chart-title">
+                <div className="dashboard-card-heading">
+                  <div>
+                    <span className="section-kicker">Cash received</span>
+                    <h3 id="revenue-chart-title">Earned by month</h3>
+                  </div>
+                  <span className="dashboard-card-note">Last 6 months</span>
+                </div>
+                <div aria-label="Cash received by month" className="monthly-chart" role="img">
+                  {revenueByMonth.map((month) => (
+                    <div className="month-bar" key={month.key}>
+                      <div className="bar-track">
+                        <div
+                          className={`bar-fill ${month.value ? "has-value" : "empty"}`}
+                          style={{ height: `${month.value ? (month.value / maxMonthlyRevenue) * 100 : 0}%` }}
+                        >
+                          <span className="sr-only">{currency(month.value)}</span>
+                        </div>
+                      </div>
+                      <span className="month-label">{month.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {!revenueByMonth.some((month) => month.value > 0) && (
+                  <p className="dashboard-empty-note">No payments recorded in the last six months.</p>
+                )}
+              </section>
+            </div>
+
+            <div className="dashboard-lower-grid">
+              <section className="dashboard-card" aria-labelledby="attention-title">
+                <div className="dashboard-card-heading">
+                  <div>
+                    <span className="section-kicker">Attention</span>
+                    <h3 id="attention-title">What needs a look</h3>
+                  </div>
+                </div>
+                <div className="dashboard-queue-list">
+                  {([
+                    ["due-today", "Due today", queueCounts.dueToday],
+                    ["overdue", "Overdue", queueCounts.overdue],
+                    ["ready", "Ready to deliver", queueCounts.ready],
+                    ["payment-due", "Payment due", queueCounts.paymentDue],
+                  ] as Array<[QueueFilter, string, number]>).map(([key, label, count]) => (
+                    <button
+                      className="dashboard-queue-row"
+                      key={key}
+                      onClick={() => {
+                        setQueueFilter(key);
+                        setActiveTab("orders");
+                      }}
+                      type="button"
+                    >
+                      <span>{label}</span>
+                      <strong>{count}</strong>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="dashboard-card" aria-labelledby="recent-orders-title">
+                <div className="dashboard-card-heading">
+                  <div>
+                    <span className="section-kicker">Latest records</span>
+                    <h3 id="recent-orders-title">Recent orders</h3>
+                  </div>
+                  <button className="text-button" onClick={() => setActiveTab("orders")} type="button">
+                    View all
+                  </button>
+                </div>
+                {recentOrders.length ? (
+                  <div className="recent-order-list">
+                    {recentOrders.map((order) => (
+                      <button
+                        className="recent-order-row"
+                        key={order.id}
+                        onClick={() => editOrder(order)}
+                        type="button"
+                      >
+                        <span>
+                          <strong>{order.orderNo}</strong>
+                          <small>{order.customer}</small>
+                        </span>
+                        <span>
+                          <Chip label={order.orderStatus} />
+                          <strong>{currency(order.amount)}</strong>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="dashboard-empty-note">No orders have been saved yet.</p>
+                )}
+              </section>
+            </div>
+          </section>
+        )}
+
         {activeTab === "new-r-code" && (
           <form
             aria-labelledby="tab-new-r-code"
@@ -1219,7 +1482,7 @@ export default function Home() {
                       return (
                         <article className="order-item-editor" key={item.id}>
                           <div className="order-item-editor-heading">
-                            <strong>Item {index + 1}</strong>
+                            <strong>Item {orderForm.items.length - index}</strong>
                             {orderForm.items.length > 1 && (
                               <button
                                 className="danger-button"
@@ -1352,10 +1615,26 @@ export default function Home() {
               <div className="field-stack order-side">
                 <div className="order-total-panel">
                   <span className="field-label">Order total</span>
-                  <strong>{currency(orderTotal(orderForm.items))}</strong>
-                  <span>
-                    {orderForm.items.length} item{orderForm.items.length === 1 ? "" : "s"}
-                  </span>
+                  <div className="order-total-breakdown">
+                    <span>Items <strong>{currency(orderTotal(orderForm.items))}</strong></span>
+                    <span>Courier <strong>{currency(orderForm.courierCharges)}</strong></span>
+                  </div>
+                  <strong>{currency(orderTotal(orderForm.items, orderForm.courierCharges))}</strong>
+                  <span>{orderForm.items.length} item{orderForm.items.length === 1 ? "" : "s"}</span>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="courierCharges">Courier charges</label>
+                  <input
+                    id="courierCharges"
+                    inputMode="numeric"
+                    min="0"
+                    type="number"
+                    value={orderForm.courierCharges}
+                    onChange={(event) =>
+                      updateOrderField("courierCharges", numericInputValue(event.target.value))
+                    }
+                  />
                 </div>
 
                 <div className="field">
@@ -1674,6 +1953,26 @@ function Metric({
   );
 }
 
+function DashboardMetric({
+  label,
+  value,
+  note,
+  tone,
+}: {
+  label: string;
+  value: string;
+  note: string;
+  tone?: "moss" | "warn";
+}) {
+  return (
+    <article className={`dashboard-metric ${tone ? `tone-${tone}` : ""}`}>
+      <p className="metric-label">{label}</p>
+      <p className="dashboard-metric-value">{value}</p>
+      <p className="dashboard-metric-note">{note}</p>
+    </article>
+  );
+}
+
 function ProductImage({
   product,
   onEnlarge,
@@ -1742,7 +2041,7 @@ function RCodePicker({
   });
   const selectedIndex = Math.max(
     0,
-    filteredProducts.findIndex((product) => product.rCode === selectedCode),
+    filteredProducts.findIndex((product) => normalizeRCode(product.rCode) === selectedCode),
   );
   const previewProduct = filteredProducts[highlightedIndex] || filteredProducts[selectedIndex];
 
@@ -1752,7 +2051,7 @@ function RCodePicker({
   }
 
   function chooseProduct(product: Product) {
-    onChange(product.rCode);
+    onChange(normalizeRCode(product.rCode));
     setSearch("");
     setHighlightedIndex(0);
     setIsOpen(false);
@@ -1800,8 +2099,12 @@ function RCodePicker({
           id={id}
           onBlur={handleBlur}
           onChange={(event) => {
-            setSearch(event.target.value);
-            onChange(event.target.value);
+            const typedValue = event.target.value;
+            const nextValue = /^(R-?)?\d+$/i.test(typedValue.trim())
+              ? normalizeRCode(typedValue)
+              : typedValue;
+            setSearch(typedValue);
+            onChange(nextValue);
             setIsOpen(true);
             setHighlightedIndex(0);
           }}
@@ -1908,7 +2211,7 @@ function OrderRow({
             product={{ image, imageUrl, rCode: firstItem?.rCode || "R" }}
             onEnlarge={onEnlarge}
           />
-          <OrderItemsSummary items={order.items} />
+          <OrderItemsDisclosure items={order.items} id={order.id} />
         </div>
       </td>
       <td>
@@ -1983,7 +2286,7 @@ function OrderCard({
         </div>
         <Chip label={order.orderStatus} />
       </div>
-      <OrderItemsSummary items={order.items} />
+      <OrderItemsDisclosure items={order.items} id={order.id} />
       <p className="muted-line">
         {order.source} | Due {order.dueDate || "-"}
       </p>
@@ -2034,6 +2337,47 @@ function OrderItemsSummary({ items }: { items: OrderItem[] }) {
   );
 }
 
+function OrderItemsDisclosure({ items, id }: { items: OrderItem[]; id: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (items.length <= 1) return <OrderItemsSummary items={items} />;
+
+  const firstItem = items[0];
+  const totalQuantity = items.reduce((total, item) => total + item.quantity, 0);
+  const detailsId = `order-items-details-${id}`;
+
+  return (
+    <div className="order-items-disclosure">
+      <div className="order-items-compact">
+        <div className="order-item-summary-title">
+          <span className="code-label">{firstItem.rCode}</span>
+          <strong>{firstItem.product}</strong>
+        </div>
+        <p className="muted-line">
+          {items.length} items · {totalQuantity} total {totalQuantity === 1 ? "unit" : "units"}
+        </p>
+      </div>
+      <button
+        aria-controls={detailsId}
+        aria-expanded={isExpanded}
+        className={`order-items-toggle secondary-button ${isExpanded ? "expanded" : ""}`}
+        onClick={() => setIsExpanded((current) => !current)}
+        type="button"
+      >
+        <span>{isExpanded ? "Hide item details" : `View all ${items.length} items`}</span>
+        <span aria-hidden="true" className="order-items-toggle-icon">
+          {isExpanded ? "−" : "+"}
+        </span>
+      </button>
+      {isExpanded && (
+        <div className="order-items-expanded" id={detailsId}>
+          <OrderItemsSummary items={items} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="mini-stat">
@@ -2044,11 +2388,11 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 }
 
 function Chip({ label }: { label: string }) {
-  return (
-    <span className={`chip ${label.toLowerCase().replaceAll(" ", "-")}`}>
-      {label}
-    </span>
-  );
+  return <span className={`chip ${statusClass(label)}`}>{label}</span>;
+}
+
+function statusClass(value: string) {
+  return value.toLowerCase().replaceAll(" ", "-");
 }
 
 function EmptyState({

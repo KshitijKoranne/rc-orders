@@ -21,6 +21,7 @@ export const orders = pgTable("rithya_orders", {
   phone: text("phone").notNull().default(""),
   product: text("product").notNull(),
   quantity: integer("quantity").notNull(),
+  courierCharges: integer("courier_charges").notNull().default(0),
   amount: integer("amount").notNull(),
   paid: integer("paid").notNull(),
   paymentStatus: text("payment_status").notNull(),

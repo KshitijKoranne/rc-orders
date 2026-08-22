@@ -1,6 +1,7 @@
 import { getDb } from "../../../db";
 import { sql } from "drizzle-orm";
 import { orders as ordersTable, products as productsTable } from "../../../db/schema";
+import { derivePaymentStatus, orderTotal } from "../../../lib/order-logic";
 
 export const runtime = "nodejs";
 
@@ -69,12 +70,6 @@ function orderItemValue(value: unknown, index: number) {
   };
 }
 
-function derivePaymentStatus(amount: number, paid: number) {
-  if (paid <= 0) return "Pending";
-  if (paid >= amount && amount > 0) return "Paid";
-  return "Partial";
-}
-
 function orderValue(value: unknown) {
   if (!isRecord(value)) throw new Error("Invalid order");
   const id = requiredText(value.id, "order id", 120);
@@ -99,7 +94,8 @@ function orderValue(value: unknown) {
     throw new Error("Invalid order items");
   }
   const items = rawItems.map(orderItemValue);
-  const amount = items.reduce((total, item) => total + item.amount, 0);
+  const courierCharges = integerValue(value.courierCharges ?? 0, "courier charges");
+  const amount = orderTotal(items, courierCharges);
   if (amount > 100_000_000) throw new Error("Invalid order amount");
   const paid = integerValue(value.paid, "paid");
   const firstItem = items[0];
@@ -115,6 +111,7 @@ function orderValue(value: unknown) {
     phone: textValue(value.phone, "phone", 80),
     product: firstItem.product,
     quantity: firstItem.quantity,
+    courierCharges,
     amount,
     paid,
     paymentStatus: derivePaymentStatus(amount, paid),

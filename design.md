@@ -20,8 +20,9 @@ The visual system uses warm paper, dark ink, moss for primary actions, and a res
 
 ## Shared app rules
 
-- Keep the four existing sections: New R-code, New order, Catalogue, Orders.
-- Orders remain the operational home. Today is a derived view inside Orders, not a fifth destination.
+- Keep the existing sections and add a Dashboard overview: Dashboard, New R-code, New order, Catalogue, Orders.
+- Dashboard is a derived overview from saved records. Orders remain the operational home for editing and filtering.
+- Dashboard metrics and charts must use real order data only: collected payments, open balances, order statuses, and dated monthly totals.
 - Keep R-code, customer, payment, status, due date, image, CSV, autosave, backup, and restore behaviour unchanged.
 - Use flat surfaces with thin rules. A panel is a work surface, not a card inside another card.
 - Use monospace for R-codes, money, dates, and save state.
@@ -62,4 +63,4 @@ All colour, type, spacing, motion, border, and surface values are exported from 
 
 ## Intentional cuts
 
-No new sidebar, dashboard route, analytics, inventory, production planning, CRM, notifications, multi-user controls, charts, assistant, decorative animation, or dependency.
+No new route, sidebar, inventory, production planning, CRM, notifications, multi-user controls, assistant, decorative animation, or dependency.
