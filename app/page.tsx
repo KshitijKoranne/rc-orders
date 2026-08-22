@@ -73,6 +73,7 @@ type OrderForm = Omit<
 };
 type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
 type TabKey = "new-r-code" | "new-order" | "catalogue" | "orders";
+type QueueFilter = "all" | "due-today" | "overdue" | "ready" | "payment-due";
 type ImageViewerState = { src: string; alt: string };
 type BackupStatus = "idle" | "preparing" | "saving" | "error";
 
@@ -205,6 +206,13 @@ function makeOrderNo(orders: Order[]) {
   return `RC-${max + 1}`;
 }
 
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function migrateOrder(raw: RawOrder): Order {
   const quantity = Number(raw.quantity) || 1;
   const legacyAmount = Number(raw.amount) || 0;
@@ -264,6 +272,7 @@ export default function Home() {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"All" | OrderStatus>("All");
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [isLoaded, setIsLoaded] = useState(false);
   const [databaseConnected, setDatabaseConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -277,18 +286,43 @@ export default function Home() {
   const [backupStatus, setBackupStatus] = useState<BackupStatus>("idle");
   const imageUploadIdRef = useRef(0);
   const saveRequestRef = useRef(0);
+  const imageViewerTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!imageViewer) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setImageViewer(null);
     };
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const controls = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".image-viewer button:not(:disabled)"),
+      );
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", trapFocus);
+    const focusTimer = window.setTimeout(() => {
+      document.querySelector<HTMLButtonElement>(".image-viewer button:not(:disabled)")?.focus();
+    }, 0);
     return () => {
+      window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", trapFocus);
+      imageViewerTriggerRef.current?.focus();
+      imageViewerTriggerRef.current = null;
     };
   }, [imageViewer]);
 
@@ -366,8 +400,23 @@ export default function Home() {
     return new Map(products.map((product) => [product.rCode, product]));
   }, [products]);
 
+  const queueCounts = useMemo(() => {
+    const today = localDateKey();
+    const actionable = orders.filter(
+      (order) => order.orderStatus !== "Cancelled" && order.orderStatus !== "Delivered",
+    );
+    return {
+      all: orders.length,
+      dueToday: actionable.filter((order) => order.dueDate === today).length,
+      overdue: actionable.filter((order) => order.dueDate && order.dueDate < today).length,
+      ready: actionable.filter((order) => order.orderStatus === "Ready").length,
+      paymentDue: actionable.filter((order) => order.amount > order.paid).length,
+    };
+  }, [orders]);
+
   const visibleOrders = useMemo(() => {
     const search = query.trim().toLowerCase();
+    const today = localDateKey();
     return orders.filter((order) => {
       const matchesOrderFields = [
         order.orderNo,
@@ -383,9 +432,17 @@ export default function Home() {
       const matchesSearch = !search || matchesOrderFields || matchesItemFields;
       const matchesStatus =
         statusFilter === "All" || order.orderStatus === statusFilter;
-      return matchesSearch && matchesStatus;
+      const isActionable =
+        order.orderStatus !== "Cancelled" && order.orderStatus !== "Delivered";
+      const matchesQueue =
+        queueFilter === "all" ||
+        (queueFilter === "due-today" && isActionable && order.dueDate === today) ||
+        (queueFilter === "overdue" && isActionable && order.dueDate && order.dueDate < today) ||
+        (queueFilter === "ready" && isActionable && order.orderStatus === "Ready") ||
+        (queueFilter === "payment-due" && isActionable && order.amount > order.paid);
+      return matchesSearch && matchesStatus && matchesQueue;
     });
-  }, [orders, query, statusFilter]);
+  }, [orders, query, queueFilter, statusFilter]);
 
   const totals = useMemo(() => {
     const active = orders.filter((order) => order.orderStatus !== "Cancelled");
@@ -490,12 +547,19 @@ export default function Home() {
   }
 
   function openImageViewer(src: string, alt: string) {
+    if (document.activeElement instanceof HTMLElement) {
+      imageViewerTriggerRef.current = document.activeElement;
+    }
     setImageScale(1);
     setImageViewer({ src, alt });
   }
 
   function saveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!databaseConnected) {
+      setNotice("Database unavailable. Reconnect before saving changes.");
+      return;
+    }
     const cleanProduct = {
       ...productForm,
       rCode: normalizeRCode(productForm.rCode),
@@ -542,6 +606,10 @@ export default function Home() {
 
   function saveOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!databaseConnected) {
+      setNotice("Database unavailable. Reconnect before saving changes.");
+      return;
+    }
     const cleanItems = orderForm.items.map((item) => {
       const quantity = Number(item.quantity) || 1;
       const unitPrice = Number(item.unitPrice) || 0;
@@ -646,6 +714,10 @@ export default function Home() {
   }
 
   function deleteProduct(id: string) {
+    if (!databaseConnected) {
+      setNotice("Database unavailable. Reconnect before deleting records.");
+      return;
+    }
     const product = products.find((item) => item.id === id);
     if (!product) return;
     const isUsed = orders.some((order) =>
@@ -661,6 +733,10 @@ export default function Home() {
   }
 
   function deleteOrder(id: string) {
+    if (!databaseConnected) {
+      setNotice("Database unavailable. Reconnect before deleting records.");
+      return;
+    }
     if (!window.confirm("Delete this order?")) return;
     setIsDirty(true);
     setOrders((current) => current.filter((order) => order.id !== id));
@@ -716,9 +792,13 @@ export default function Home() {
   }
 
   async function backupJson() {
-    if (isDirty || isSyncing) {
+    if (!databaseConnected || isDirty || isSyncing) {
       setBackupStatus("error");
-      setNotice("Finish saving changes before creating a backup.");
+      setNotice(
+        databaseConnected
+          ? "Finish saving changes before creating a backup."
+          : "Database unavailable. Reconnect before creating a backup.",
+      );
       return;
     }
     setBackupStatus("preparing");
@@ -761,6 +841,11 @@ export default function Home() {
   function restoreJson(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!databaseConnected) {
+      setNotice("Database unavailable. Reconnect before restoring a backup.");
+      event.target.value = "";
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -825,15 +910,35 @@ export default function Home() {
     currentTab: TabKey,
   ) {
     const currentIndex = tabItems.findIndex((tab) => tab.key === currentTab);
-    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const direction = event.key === "ArrowRight" ? 1 : -1;
-    const nextIndex = (currentIndex + direction + tabItems.length) % tabItems.length;
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabItems.length - 1
+          : (currentIndex + direction + tabItems.length) % tabItems.length;
     setActiveTab(tabItems[nextIndex].key);
     window.setTimeout(() => {
       document.getElementById(`tab-${tabItems[nextIndex].key}`)?.focus();
     }, 0);
   }
+
+  const hasOrderFilters =
+    Boolean(query.trim()) || statusFilter !== "All" || queueFilter !== "all";
+  const orderEmptyText = queueFilter !== "all"
+    ? "Nothing in this queue"
+    : hasOrderFilters
+      ? "No matching orders"
+      : "Your order book is clear";
+  const orderEmptyDetail = queueFilter !== "all"
+    ? "Try another attention queue or return to all orders."
+    : hasOrderFilters
+      ? "No orders found in this view. Clear the filters to see the full order book."
+      : products.length
+        ? "New orders will appear here as soon as you save them."
+        : "No orders found yet. Add an R-code first, then use it to build an order.";
 
   return (
     <main className="app-shell">
@@ -847,7 +952,9 @@ export default function Home() {
           </div>
           <span
             aria-live="polite"
-            className={`sync-status ${databaseConnected ? "connected" : "offline"}`}
+            className={`sync-status ${databaseConnected ? "connected" : "offline"} ${
+              isSyncing ? "saving" : syncError ? "failed" : ""
+            }`}
           >
             {databaseConnected
               ? isSyncing
@@ -912,6 +1019,7 @@ export default function Home() {
               onKeyDown={(event) => handleTabKeyDown(event, tab.key)}
               onClick={() => setActiveTab(tab.key)}
               role="tab"
+              tabIndex={activeTab === tab.key ? 0 : -1}
               type="button"
             >
               <span>{tab.label}</span>
@@ -921,13 +1029,21 @@ export default function Home() {
           ))}
         </nav>
 
-        <div className="metric-grid">
-          <Metric label="R-codes" value={String(totals.catalogue)} />
-          <Metric label="Active orders" value={String(totals.count)} />
-          <Metric label="Order value" value={currency(totals.revenue)} />
-          <Metric label="Collected" value={currency(totals.collected)} />
-          <Metric label="Pending" value={currency(totals.pending)} tone="warn" />
-          <Metric label="Ready" value={String(totals.ready)} />
+        <div className="work-summary">
+          <div className="work-summary-lead">
+            <span className="section-kicker">Work surface</span>
+            <h2>Keep the next thing moving.</h2>
+            <p>
+              {totals.count} active order{totals.count === 1 ? "" : "s"} ·{" "}
+              {totals.catalogue} R-code{totals.catalogue === 1 ? "" : "s"} in the shelf.
+            </p>
+          </div>
+          <div className="summary-metrics">
+            <Metric label="R-codes" value={String(totals.catalogue)} />
+            <Metric label="Active orders" value={String(totals.count)} />
+            <Metric label="Pending" value={currency(totals.pending)} tone="warn" />
+            <Metric label="Ready" value={String(totals.ready)} />
+          </div>
         </div>
 
         {activeTab === "new-r-code" && (
@@ -1349,7 +1465,14 @@ export default function Home() {
                 </article>
               ))}
             </div>
-            {!products.length && <EmptyState text="No R-codes yet" />}
+            {!products.length && (
+              <EmptyState
+                actionLabel="Add an R-code"
+                detail="Give each piece a code, price, and optional photo."
+                onAction={() => setActiveTab("new-r-code")}
+                text="No R-codes yet"
+              />
+            )}
           </section>
         )}
 
@@ -1389,24 +1512,63 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="orders-table-wrap">
-              <table className="orders-table">
-                <caption className="sr-only">Orders</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Order</th>
-                    <th scope="col">Items</th>
-                    <th scope="col">Customer</th>
-                    <th scope="col">Amount</th>
-                    <th scope="col">Payment</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Due</th>
-                    <th className="align-right" scope="col">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="queue-strip" aria-label="Order queues">
+              {([
+                ["all", "All orders", queueCounts.all],
+                ["due-today", "Due today", queueCounts.dueToday],
+                ["overdue", "Overdue", queueCounts.overdue],
+                ["ready", "Ready", queueCounts.ready],
+                ["payment-due", "Payment due", queueCounts.paymentDue],
+              ] as Array<[QueueFilter, string, number]>).map(([key, label, count]) => (
+                <button
+                  aria-pressed={queueFilter === key}
+                  className={`queue-button ${queueFilter === key ? "active" : ""}`}
+                  key={key}
+                  onClick={() => setQueueFilter(key)}
+                  type="button"
+                >
+                  <span>{label}</span>
+                  <strong>{count}</strong>
+                </button>
+              ))}
+            </div>
+
+            {visibleOrders.length ? (
+              <>
+                <div className="orders-table-wrap">
+                  <table className="orders-table">
+                    <caption className="sr-only">Orders</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Order</th>
+                        <th scope="col">Items</th>
+                        <th scope="col">Customer</th>
+                        <th scope="col">Amount</th>
+                        <th scope="col">Payment</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Due</th>
+                        <th className="align-right" scope="col">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleOrders.map((order) => (
+                        <OrderRow
+                          key={order.id}
+                          order={order}
+                          image={productByCode.get(order.items[0]?.rCode || "")?.image || ""}
+                          imageUrl={productByCode.get(order.items[0]?.rCode || "")?.imageUrl}
+                          onEnlarge={openImageViewer}
+                          onEdit={editOrder}
+                          onDelete={deleteOrder}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="order-cards">
                   {visibleOrders.map((order) => (
-                    <OrderRow
+                    <OrderCard
                       key={order.id}
                       order={order}
                       image={productByCode.get(order.items[0]?.rCode || "")?.image || ""}
@@ -1416,25 +1578,24 @@ export default function Home() {
                       onDelete={deleteOrder}
                     />
                   ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="order-cards">
-              {visibleOrders.map((order) => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  image={productByCode.get(order.items[0]?.rCode || "")?.image || ""}
-                  imageUrl={productByCode.get(order.items[0]?.rCode || "")?.imageUrl}
-                  onEnlarge={openImageViewer}
-                  onEdit={editOrder}
-                  onDelete={deleteOrder}
-                />
-              ))}
-            </div>
-
-            {!visibleOrders.length && <EmptyState text="No orders found" />}
+                </div>
+              </>
+            ) : (
+              <EmptyState
+                actionLabel={hasOrderFilters ? "Clear filters" : products.length ? "New order" : "Add an R-code"}
+                detail={orderEmptyDetail}
+                onAction={() => {
+                  if (hasOrderFilters) {
+                    setQuery("");
+                    setStatusFilter("All");
+                    setQueueFilter("all");
+                  } else {
+                    setActiveTab(products.length ? "new-order" : "new-r-code");
+                  }
+                }}
+                text={orderEmptyText}
+              />
+            )}
           </section>
         )}
       </section>
@@ -1459,6 +1620,7 @@ export default function Home() {
             </button>
             <button
               aria-label="Reset image zoom"
+              autoFocus
               onClick={() => setImageScale(1)}
               type="button"
             >
@@ -1889,6 +2051,26 @@ function Chip({ label }: { label: string }) {
   );
 }
 
-function EmptyState({ text }: { text: string }) {
-  return <div className="empty-state">{text}</div>;
+function EmptyState({
+  text,
+  detail,
+  actionLabel,
+  onAction,
+}: {
+  text: string;
+  detail?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="empty-state">
+      <strong>{text}</strong>
+      {detail && <p>{detail}</p>}
+      {actionLabel && onAction && (
+        <button className="secondary-button" onClick={onAction} type="button">
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
 }
