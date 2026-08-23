@@ -2276,7 +2276,7 @@ function RCodePicker({
             <div className="rcode-preview" aria-live="polite">
               <ProductImage product={previewProduct} onEnlarge={onEnlarge} />
               <div className="rcode-preview-copy">
-                <span className="selected-product-label">Preview</span>
+                <span className="selected-product-label">Choose by photo</span>
                 <strong>{previewProduct.rCode}</strong>
                 <span>{previewProduct.name}</span>
                 <b>{currency(previewProduct.price)}</b>

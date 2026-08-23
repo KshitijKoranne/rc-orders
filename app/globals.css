@@ -1650,8 +1650,8 @@ h3 {
   position: absolute;
   z-index: 15;
   top: calc(100% + var(--space-xs));
-  right: 0;
   left: 0;
+  width: min(520px, calc(100vw - 32px));
   overflow: hidden;
   border: 1px solid var(--color-rule-strong);
   border-radius: var(--radius-sm);
@@ -1694,17 +1694,22 @@ h3 {
 
 .rcode-option-list {
   display: grid;
-  max-height: 260px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-xs);
+  max-height: min(440px, 56vh);
   overflow-y: auto;
   padding: var(--space-xs);
 }
 
 .rcode-option {
-  display: flex;
+  display: grid;
+  grid-template-areas:
+    "image copy"
+    "image price";
+  grid-template-columns: 56px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-sm);
-  min-height: 60px;
+  min-height: 76px;
   padding: var(--space-xs) var(--space-sm);
   border: 0;
   border-radius: var(--radius-sm);
@@ -1714,9 +1719,9 @@ h3 {
 }
 
 .rcode-option-image {
+  grid-area: image;
   width: 48px;
   height: 48px;
-  flex: 0 0 48px;
   border-radius: var(--radius-sm);
   background: var(--color-surface-muted);
   object-fit: cover;
@@ -1732,6 +1737,7 @@ h3 {
 
 .rcode-option-copy {
   display: grid;
+  grid-area: copy;
   gap: var(--space-3xs);
   min-width: 0;
 }
@@ -1745,7 +1751,8 @@ h3 {
 }
 
 .rcode-option b {
-  flex: 0 0 auto;
+  grid-area: price;
+  justify-self: start;
   font-family: var(--font-code);
   font-size: var(--text-xs);
 }
@@ -2052,6 +2059,14 @@ h3 {
 
   .tool-button {
     min-height: 44px;
+  }
+
+  .rcode-menu {
+    width: calc(100vw - 24px);
+  }
+
+  .rcode-option-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .work-summary-lead {
