@@ -195,6 +195,8 @@ export function unauthorizedResponse(request?: Request) {
 
 export function withSessionCookie(response: Response, value: string, request?: Request) {
   response.headers.set("Set-Cookie", sessionCookieHeader(value, request));
-  response.headers.set("Cache-Control", "no-store");
+  if (!response.headers.has("Cache-Control")) {
+    response.headers.set("Cache-Control", "no-store");
+  }
   return response;
 }

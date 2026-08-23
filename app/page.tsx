@@ -16,6 +16,7 @@ import {
   normalizeRCode,
   orderTotal,
 } from "../lib/order-logic";
+import { originalProductImageUrl } from "../lib/image";
 
 type PaymentStatus = "Pending" | "Partial" | "Paid";
 type OrderStatus = "New" | "In Progress" | "Ready" | "Delivered" | "Cancelled";
@@ -2094,6 +2095,7 @@ function ProductImage({
   const imageSrc = product?.image || product?.imageUrl;
   if (imageSrc) {
     const alt = product.rCode ? `${product.rCode} product` : "Selected product";
+    const enlargedImageSrc = originalProductImageUrl(imageSrc);
     const image = (
       // eslint-disable-next-line @next/next/no-img-element
       <img
@@ -2109,7 +2111,7 @@ function ProductImage({
         <button
           aria-label={`Enlarge ${alt}`}
           className="product-image product-image-button"
-          onClick={() => onEnlarge(imageSrc, alt)}
+          onClick={() => onEnlarge(enlargedImageSrc, alt)}
           type="button"
         >
           {image}
@@ -2302,7 +2304,23 @@ function RCodePicker({
                   role="option"
                   type="button"
                 >
-                  <span>
+                  {product.image || product.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      alt=""
+                      className="rcode-option-image"
+                      loading="lazy"
+                      src={product.image || product.imageUrl}
+                    />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="rcode-option-image rcode-option-image-empty"
+                    >
+                      {product.rCode}
+                    </span>
+                  )}
+                  <span className="rcode-option-copy">
                     <strong>{product.rCode}</strong>
                     <small>{product.name}</small>
                   </span>

@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { getDb } from "../../../db";
 import { sql } from "drizzle-orm";
 import { orders as ordersTable, products as productsTable } from "../../../db/schema";
+import { isProductImageUrl, productImageUrl } from "../../../lib/image";
 import { derivePaymentStatus, orderTotal } from "../../../lib/order-logic";
 import {
   refreshSessionFromRequest,
@@ -158,15 +160,15 @@ function errorResponse(message: string, status: number) {
   return Response.json({ error: message }, { status });
 }
 
-function imageUrl(id: string) {
-  return `/api/products/${encodeURIComponent(id)}/image`;
+function imageVersion(value: string) {
+  return value ? createHash("sha256").update(value).digest("hex") : "";
 }
 
 function mergeStoredImage(
   product: ReturnType<typeof productValue>,
   storedImage: string | undefined,
 ) {
-  if (!product.image || product.image === imageUrl(product.id)) {
+  if (!product.image || isProductImageUrl(product.image, product.id)) {
     return { ...product, image: storedImage ?? "" };
   }
   if (!/^data:image\/[a-z0-9.+-]+(?:;[^,]*)?,/i.test(product.image)) {
@@ -194,13 +196,14 @@ export async function GET(request: Request) {
             notes: productsTable.notes,
             createdAt: productsTable.createdAt,
             hasImage: sql<boolean>`char_length(${productsTable.image}) > 0`,
+            imageHash: productsTable.imageHash,
           })
           .from(productsTable)
           .then((products) =>
-            products.map(({ hasImage, ...product }) => ({
+            products.map(({ hasImage, imageHash, ...product }) => ({
               ...product,
               image: "",
-              imageUrl: hasImage ? imageUrl(product.id) : "",
+              imageUrl: hasImage ? productImageUrl(product.id, imageHash) : "",
             })),
           );
     const [products, storedOrders] = await Promise.all([
@@ -244,9 +247,12 @@ export async function PUT(request: Request) {
         .select({ id: productsTable.id, image: productsTable.image })
         .from(productsTable);
       const storedImages = new Map(storedProducts.map((product) => [product.id, product.image]));
-      const productsWithImages = products.map((product) =>
-        mergeStoredImage(product, storedImages.get(product.id)),
-      );
+      const productsWithImages = products
+        .map((product) => mergeStoredImage(product, storedImages.get(product.id)))
+        .map((product) => ({
+          ...product,
+          imageHash: imageVersion(product.image),
+        }));
 
       await transaction.delete(ordersTable);
       await transaction.delete(productsTable);

@@ -28,9 +28,19 @@ async function ensureSchema(sql: SqlClient) {
       name text NOT NULL,
       price integer NOT NULL,
       image text NOT NULL DEFAULT '',
+      image_hash text NOT NULL DEFAULT '',
       notes text NOT NULL DEFAULT '',
       created_at text NOT NULL
     )
+  `;
+  await sql`
+    ALTER TABLE rithya_products
+    ADD COLUMN IF NOT EXISTS image_hash text NOT NULL DEFAULT ''
+  `;
+  await sql`
+    UPDATE rithya_products
+    SET image_hash = md5(image)
+    WHERE image_hash = '' AND image <> ''
   `;
   await sql`
     CREATE TABLE IF NOT EXISTS rithya_orders (

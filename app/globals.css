@@ -1704,7 +1704,7 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-sm);
-  min-height: 48px;
+  min-height: 60px;
   padding: var(--space-xs) var(--space-sm);
   border: 0;
   border-radius: var(--radius-sm);
@@ -1713,7 +1713,24 @@ h3 {
   text-align: left;
 }
 
-.rcode-option > span {
+.rcode-option-image {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  object-fit: cover;
+}
+
+.rcode-option-image-empty {
+  display: grid;
+  place-items: center;
+  color: var(--color-muted);
+  font-family: var(--font-code);
+  font-size: var(--text-xs);
+}
+
+.rcode-option-copy {
   display: grid;
   gap: var(--space-3xs);
   min-width: 0;

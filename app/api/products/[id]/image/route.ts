@@ -12,6 +12,7 @@ import {
 export const runtime = "nodejs";
 
 const maxImageLength = 20_000_000;
+const thumbnailSize = 256;
 
 function errorResponse(message: string, status: number) {
   return Response.json({ error: message }, { status });
@@ -34,6 +35,27 @@ function decodeImageDataUrl(value: string) {
   }
 }
 
+async function makeThumbnail(bytes: Buffer) {
+  if (process.env.RITHYA_NODE_RUNTIME !== "1") return null;
+
+  try {
+    const { default: sharp } = await import("sharp");
+    return await sharp(bytes)
+      .rotate()
+      .resize({
+        width: thumbnailSize,
+        height: thumbnailSize,
+        fit: "cover",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 78 })
+      .toBuffer();
+  } catch (error) {
+    console.error("Could not create product image thumbnail", error);
+    return null;
+  }
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -44,6 +66,9 @@ export async function GET(
   try {
     const { id } = await params;
     if (!id || id.length > 120) return errorResponse("Invalid product id", 400);
+    const searchParams = new URL(request.url).searchParams;
+    const variant = searchParams.get("variant");
+    if (variant && variant !== "thumbnail") return errorResponse("Invalid image variant", 400);
 
     const db = await getDb();
     const [product] = await db
@@ -64,22 +89,37 @@ export async function GET(
       return errorResponse("Image unavailable", 503);
     }
 
+    let body: Buffer<ArrayBufferLike> = decoded.bytes;
+    let contentType = decoded.contentType;
+    if (variant === "thumbnail") {
+      const thumbnail = await makeThumbnail(decoded.bytes);
+      if (thumbnail) {
+        body = thumbnail;
+        contentType = "image/webp";
+      }
+    }
+
+    const hasVersion = Boolean(searchParams.get("v"));
     const etag = `"${createHash("sha256")
-      .update(decoded.contentType)
+      .update(contentType)
       .update("\0")
-      .update(decoded.bytes)
+      .update(body)
       .digest("hex")}"`;
     const headers = {
-      // Revalidate stable product URLs so a replacement image cannot stay stale in the browser.
-      "Cache-Control": "private, no-cache",
+      // Versioned URLs change when a product image changes, so browsers can keep optimized bytes.
+      "Cache-Control": hasVersion ? "private, max-age=31536000, immutable" : "private, no-cache",
       ETag: etag,
-      "Content-Type": decoded.contentType,
+      "Content-Type": contentType,
     };
     if (request.headers.get("if-none-match") === etag) {
       return new Response(null, { status: 304, headers });
     }
 
-    return withSessionCookie(new Response(decoded.bytes, { headers }), session, request);
+    return withSessionCookie(
+      new Response(body as unknown as BodyInit, { headers }),
+      session,
+      request,
+    );
   } catch (error) {
     console.error("Could not read product image", error);
     return errorResponse("Image service unavailable", 503);
