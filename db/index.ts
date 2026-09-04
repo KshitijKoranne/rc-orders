@@ -27,6 +27,7 @@ async function ensureSchema(sql: SqlClient) {
       r_code text NOT NULL UNIQUE,
       name text NOT NULL,
       price integer NOT NULL,
+      cost integer NOT NULL DEFAULT 0,
       image text NOT NULL DEFAULT '',
       image_hash text NOT NULL DEFAULT '',
       notes text NOT NULL DEFAULT '',
@@ -36,6 +37,10 @@ async function ensureSchema(sql: SqlClient) {
   await sql`
     ALTER TABLE rithya_products
     ADD COLUMN IF NOT EXISTS image_hash text NOT NULL DEFAULT ''
+  `;
+  await sql`
+    ALTER TABLE rithya_products
+    ADD COLUMN IF NOT EXISTS cost integer NOT NULL DEFAULT 0
   `;
   await sql`
     UPDATE rithya_products

@@ -5,6 +5,7 @@ export const products = pgTable("rithya_products", {
   rCode: text("r_code").notNull().unique(),
   name: text("name").notNull(),
   price: integer("price").notNull(),
+  cost: integer("cost").notNull().default(0),
   image: text("image").notNull().default(""),
   imageHash: text("image_hash").notNull().default(""),
   notes: text("notes").notNull().default(""),

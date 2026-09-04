@@ -10,19 +10,36 @@ Rithya Creations is a maker's workbench, not an ERP dashboard. The interface sho
 
 - Genre: editorial workshop
 - Macrostructure: Workbench
-- Theme: quiet worktable
-- Enrichment: none
+- Theme: warm workshop (2026 refresh)
+- Enrichment: restrained depth and entrance motion only
 - App chrome: edge-aligned, compact, and text-labelled
 - Typography: existing Geist and Geist Mono from app/layout.tsx
 - Voice: plain, specific, calm
 
-The visual system uses warm paper, dark ink, moss for primary actions, and a restrained clay accent. It uses no gradients, glass effects, charts, decorative illustrations, or decorative motion.
+The visual system uses warm paper, dark ink, moss for primary actions, and a
+restrained clay accent. These brand colours do not change.
+
+The refresh permits:
+
+- Layered shadows for depth, and larger radii.
+- A blurred, sticky header and tab rail.
+- Soft radial washes on the profit banner and the page background only.
+- Data charts, because the Dashboard is a data surface.
+- Entrance and hover motion under 250 ms, with a reduced-motion fallback.
+- A dark theme that follows the operating system.
+
+It still uses no decorative illustrations and no looping animation.
 
 ## Shared app rules
 
 - Keep the existing sections and add a Dashboard overview: Dashboard, New R-code, New order, Catalogue, Orders.
 - Dashboard is a derived overview from saved records. Orders remain the operational home for editing and filtering.
-- Dashboard metrics and charts must use real order data only: collected payments, open balances, order statuses, and dated monthly totals.
+- Dashboard metrics and charts must use real order data only: collected payments,
+  open balances, order statuses, dated monthly totals, and derived profit.
+- Profit is derived, never stored. It reads the current catalogue cost by R-code.
+  A cost change therefore updates the profit of every order, old and new.
+- Courier charges are excluded from profit on both sides. The customer pays them
+  and the courier takes them, so they are not margin.
 - Keep R-code, customer, payment, status, due date, image, CSV, autosave, backup, and restore behaviour unchanged.
 - Use flat surfaces with thin rules. A panel is a work surface, not a card inside another card.
 - Use monospace for R-codes, money, dates, and save state.
