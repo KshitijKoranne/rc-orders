@@ -15,6 +15,11 @@ import {
   matchesRCodeSearch,
   normalizeRCode,
   orderTotal,
+  costByRCode,
+  orderCost,
+  orderGoodsRevenue,
+  orderProfit,
+  marginPercent,
 } from "../lib/order-logic";
 import { originalProductImageUrl } from "../lib/image";
 
@@ -26,6 +31,7 @@ type Product = {
   rCode: string;
   name: string;
   price: number;
+  cost: number;
   image?: string;
   imageUrl?: string;
   notes: string;
@@ -81,7 +87,10 @@ type OrderForm = Omit<
   courierCharges: NumericInput;
   paid: NumericInput;
 };
-type ProductForm = Omit<Product, "id" | "createdAt" | "price"> & { price: NumericInput };
+type ProductForm = Omit<Product, "id" | "createdAt" | "price" | "cost"> & {
+  price: NumericInput;
+  cost: NumericInput;
+};
 type TabKey = "dashboard" | "new-r-code" | "new-order" | "catalogue" | "orders";
 type QueueFilter = "all" | "due-today" | "overdue" | "ready" | "payment-due";
 type ImageViewerState = { src: string; alt: string };
@@ -140,6 +149,7 @@ const initialProductForm: ProductForm = {
   rCode: "",
   name: "",
   price: 0,
+  cost: 0,
   image: "",
   notes: "",
 };
@@ -515,6 +525,20 @@ export default function Home() {
     });
   }, [orders, query, queueFilter, statusFilter]);
 
+  const productCosts = useMemo(() => costByRCode(products), [products]);
+
+  const formMargin = useMemo(() => {
+    const price = Number(productForm.price) || 0;
+    const cost = Number(productForm.cost) || 0;
+    if (price <= 0) return { label: "Enter a price to see the margin.", tone: "muted" };
+    if (cost <= 0) return { label: "Cost not set, so profit is unknown.", tone: "muted" };
+    const profit = price - cost;
+    return {
+      label: `Profit ${currency(profit)} per piece · ${marginPercent(profit, price)}% margin`,
+      tone: profit > 0 ? "good" : "bad",
+    };
+  }, [productForm.cost, productForm.price]);
+
   const totals = useMemo(() => {
     const nonCancelled = orders.filter((order) => order.orderStatus !== "Cancelled");
     const active = nonCancelled.filter((order) => isActiveOrderStatus(order.orderStatus));
@@ -530,8 +554,21 @@ export default function Home() {
       ),
       ready: active.filter((order) => order.orderStatus === "Ready").length,
       fulfilled: orders.filter((order) => order.orderStatus === "Delivered").length,
+      goodsRevenue: nonCancelled.reduce(
+        (sum, order) => sum + orderGoodsRevenue(order.items),
+        0,
+      ),
+      goodsCost: nonCancelled.reduce(
+        (sum, order) => sum + orderCost(order.items, productCosts),
+        0,
+      ),
+      profit: nonCancelled.reduce(
+        (sum, order) => sum + orderProfit(order.items, productCosts),
+        0,
+      ),
+      untracked: products.filter((product) => !Number(product.cost)).length,
     };
-  }, [orders, products]);
+  }, [orders, productCosts, products]);
 
   const dashboardStatusCounts = useMemo(
     () =>
@@ -560,30 +597,59 @@ export default function Home() {
     };
   }, [dashboardStatusCounts]);
 
-  const revenueByMonth = useMemo(() => {
+
+  const profitByMonth = useMemo(() => {
     const today = new Date();
     const months = Array.from({ length: 6 }, (_, index) => {
       const date = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       return {
-        key,
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
         label: new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date),
-        value: 0,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
       };
     });
-    const monthByKey = new Map(months.map((month) => [month.key, month]));
+    const byKey = new Map(months.map((month) => [month.key, month]));
     orders.forEach((order) => {
       if (order.orderStatus === "Cancelled") return;
       const date = new Date(order.createdAt);
       if (Number.isNaN(date.getTime())) return;
-      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      const month = monthByKey.get(key);
-      if (month) month.value += Math.max(Number(order.paid), 0);
+      const month = byKey.get(
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      );
+      if (!month) return;
+      month.revenue += orderGoodsRevenue(order.items);
+      month.cost += orderCost(order.items, productCosts);
+      month.profit = month.revenue - month.cost;
     });
     return months;
-  }, [orders]);
+  }, [orders, productCosts]);
 
-  const maxMonthlyRevenue = Math.max(...revenueByMonth.map((month) => month.value), 1);
+  const maxMonthlyRevenueBar = Math.max(
+    ...profitByMonth.map((month) => Math.max(month.revenue, month.cost)),
+    1,
+  );
+
+  const topProfitProducts = useMemo(() => {
+    const tally = new Map<string, { rCode: string; name: string; profit: number; units: number }>();
+    orders.forEach((order) => {
+      if (order.orderStatus === "Cancelled") return;
+      order.items.forEach((item) => {
+        const cost = (productCosts.get(item.rCode) ?? 0) * item.quantity;
+        const entry = tally.get(item.rCode) ?? {
+          rCode: item.rCode,
+          name: item.product,
+          profit: 0,
+          units: 0,
+        };
+        entry.profit += item.amount - cost;
+        entry.units += item.quantity;
+        tally.set(item.rCode, entry);
+      });
+    });
+    return [...tally.values()].sort((left, right) => right.profit - left.profit).slice(0, 5);
+  }, [orders, productCosts]);
   const recentOrders = useMemo(
     () =>
       [...orders]
@@ -726,6 +792,7 @@ export default function Home() {
       rCode: normalizeRCode(productForm.rCode),
       name: productForm.name.trim(),
       price: Number(productForm.price) || 0,
+      cost: Number(productForm.cost) || 0,
       notes: productForm.notes.trim(),
     };
 
@@ -848,6 +915,7 @@ export default function Home() {
       rCode: product.rCode,
       name: product.name,
       price: product.price,
+      cost: Number(product.cost) || 0,
       image: product.image,
       imageUrl: product.imageUrl,
       notes: product.notes,
@@ -921,6 +989,9 @@ export default function Home() {
       "Qty",
       "Unit Price",
       "Line Amount",
+      "Unit Cost",
+      "Line Cost",
+      "Line Profit",
       "Courier Charges",
       "Order Total",
       "Paid",
@@ -942,6 +1013,9 @@ export default function Home() {
         item.quantity,
         item.unitPrice,
         item.amount,
+        productCosts.get(item.rCode) ?? 0,
+        (productCosts.get(item.rCode) ?? 0) * item.quantity,
+        item.amount - (productCosts.get(item.rCode) ?? 0) * item.quantity,
         order.courierCharges,
         order.amount,
         order.paid,
@@ -1253,11 +1327,57 @@ export default function Home() {
               </button>
             </div>
 
+            <section className="profit-banner" aria-labelledby="profit-banner-title">
+              <div className="profit-banner-main">
+                <span className="section-kicker">Net profit</span>
+                <p className="profit-banner-value" id="profit-banner-title">
+                  {currency(totals.profit)}
+                </p>
+                <p className="profit-banner-note">
+                  {marginPercent(totals.profit, totals.goodsRevenue)}% margin on{" "}
+                  {currency(totals.goodsRevenue)} of product sales. Courier charges are
+                  not counted.
+                </p>
+              </div>
+              <dl className="profit-banner-split">
+                <div>
+                  <dt>Product revenue</dt>
+                  <dd>{currency(totals.goodsRevenue)}</dd>
+                </div>
+                <div>
+                  <dt>Cost of goods</dt>
+                  <dd>{currency(totals.goodsCost)}</dd>
+                </div>
+              </dl>
+            </section>
+
+            {totals.untracked > 0 && (
+              <p className="dashboard-alert" role="status">
+                <strong>{totals.untracked}</strong> R-code
+                {totals.untracked === 1 ? " has" : "s have"} no cost. Profit is too high
+                until you add the cost.{" "}
+                <button
+                  className="text-button"
+                  onClick={() => setActiveTab("catalogue")}
+                  type="button"
+                >
+                  Open catalogue
+                </button>
+              </p>
+            )}
+
             <div className="dashboard-metrics">
               <DashboardMetric
-                label="Total earned"
+                label="Cash collected"
                 note="Payments recorded"
+                tone="moss"
                 value={currency(totals.collected)}
+              />
+              <DashboardMetric
+                label="Outstanding"
+                note="Balance on non-cancelled orders"
+                tone="warn"
+                value={currency(totals.pending)}
               />
               <DashboardMetric
                 label="Pending orders"
@@ -1267,14 +1387,7 @@ export default function Home() {
               <DashboardMetric
                 label="Fulfilled orders"
                 note="Status: Delivered"
-                tone="moss"
                 value={String(totals.fulfilled)}
-              />
-              <DashboardMetric
-                label="Outstanding"
-                note="Balance on non-cancelled orders"
-                tone="warn"
-                value={currency(totals.pending)}
               />
             </div>
 
@@ -1325,33 +1438,89 @@ export default function Home() {
               <section className="dashboard-card" aria-labelledby="revenue-chart-title">
                 <div className="dashboard-card-heading">
                   <div>
-                    <span className="section-kicker">Cash received</span>
-                    <h3 id="revenue-chart-title">Earned by month</h3>
+                    <span className="section-kicker">Last 6 months</span>
+                    <h3 id="revenue-chart-title">Revenue and cost</h3>
                   </div>
-                  <span className="dashboard-card-note">Last 6 months</span>
+                  <ul className="chart-key">
+                    <li>
+                      <span aria-hidden="true" className="key-dot key-revenue" />
+                      Revenue
+                    </li>
+                    <li>
+                      <span aria-hidden="true" className="key-dot key-cost" />
+                      Cost
+                    </li>
+                  </ul>
                 </div>
-                <div aria-label="Cash received by month" className="monthly-chart" role="img">
-                  {revenueByMonth.map((month) => (
-                    <div className="month-bar" key={month.key}>
-                      <div className="bar-track">
+                <div className="monthly-chart" role="table" aria-label="Revenue and cost by month">
+                  {profitByMonth.map((month) => (
+                    <div className="month-bar" key={month.key} role="row">
+                      <div className="bar-pair">
                         <div
-                          className={`bar-fill ${month.value ? "has-value" : "empty"}`}
-                          style={{ height: `${month.value ? (month.value / maxMonthlyRevenue) * 100 : 0}%` }}
+                          className="bar-fill bar-revenue"
+                          role="cell"
+                          style={{ height: `${(month.revenue / maxMonthlyRevenueBar) * 100}%` }}
                         >
-                          <span className="sr-only">{currency(month.value)}</span>
+                          <span className="sr-only">
+                            {month.label} revenue {currency(month.revenue)}
+                          </span>
+                        </div>
+                        <div
+                          className="bar-fill bar-cost"
+                          role="cell"
+                          style={{ height: `${(month.cost / maxMonthlyRevenueBar) * 100}%` }}
+                        >
+                          <span className="sr-only">
+                            {month.label} cost {currency(month.cost)}
+                          </span>
                         </div>
                       </div>
                       <span className="month-label">{month.label}</span>
+                      <span
+                        className="month-profit"
+                        data-tone={month.profit > 0 ? "good" : month.profit < 0 ? "bad" : "muted"}
+                      >
+                        {month.revenue ? compactCurrency(month.profit) : "—"}
+                      </span>
                     </div>
                   ))}
                 </div>
-                {!revenueByMonth.some((month) => month.value > 0) && (
-                  <p className="dashboard-empty-note">No payments recorded in the last six months.</p>
+                {!profitByMonth.some((month) => month.revenue > 0) && (
+                  <p className="dashboard-empty-note">
+                    No orders in the last six months. The bars fill as you save orders.
+                  </p>
                 )}
               </section>
             </div>
 
             <div className="dashboard-lower-grid">
+              <section className="dashboard-card" aria-labelledby="top-earners-title">
+                <div className="dashboard-card-heading">
+                  <div>
+                    <span className="section-kicker">Catalogue</span>
+                    <h3 id="top-earners-title">Best earners</h3>
+                  </div>
+                  <span className="dashboard-card-note">Top 5 by profit</span>
+                </div>
+                <ol className="earner-list">
+                  {topProfitProducts.map((entry) => (
+                    <li key={entry.rCode}>
+                      <span className="code-label">{entry.rCode}</span>
+                      <span className="earner-name">{entry.name}</span>
+                      <span className="earner-units">{entry.units} sold</span>
+                      <strong data-tone={entry.profit >= 0 ? "good" : "bad"}>
+                        {currency(entry.profit)}
+                      </strong>
+                    </li>
+                  ))}
+                </ol>
+                {!topProfitProducts.length && (
+                  <p className="dashboard-empty-note">
+                    No orders yet. This list ranks R-codes by the profit they earned.
+                  </p>
+                )}
+              </section>
+
               <section className="dashboard-card" aria-labelledby="attention-title">
                 <div className="dashboard-card-heading">
                   <div>
@@ -1440,7 +1609,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="form-grid two-up">
+            <div className="form-grid three-up">
               <div className="field">
                 <label htmlFor="catalogueRCode">R-code</label>
                 <input
@@ -1455,7 +1624,20 @@ export default function Home() {
                 />
               </div>
               <div className="field">
-                <label htmlFor="cataloguePrice">Price</label>
+                <label htmlFor="catalogueCost">Cost to me</label>
+                <input
+                  id="catalogueCost"
+                  min="0"
+                  type="number"
+                  value={productForm.cost}
+                  onChange={(event) =>
+                    updateProductField("cost", numericInputValue(event.target.value))
+                  }
+                />
+                <p className="field-hint">Wax, wick, jar, fragrance, and packing.</p>
+              </div>
+              <div className="field">
+                <label htmlFor="cataloguePrice">Selling price</label>
                 <input
                   id="cataloguePrice"
                   required
@@ -1466,6 +1648,9 @@ export default function Home() {
                     updateProductField("price", numericInputValue(event.target.value))
                   }
                 />
+                <p className="field-hint" data-tone={formMargin.tone}>
+                  {formMargin.label}
+                </p>
               </div>
             </div>
 
@@ -1830,8 +2015,21 @@ export default function Home() {
                         <p className="code-label">{product.rCode}</p>
                         <h3>{product.name}</h3>
                       </div>
-                      <p className="product-price">{currency(product.price)}</p>
+                      <div className="product-price-block">
+                        <p className="product-price">{currency(product.price)}</p>
+                        <p className="product-cost">
+                          {Number(product.cost) > 0
+                            ? `cost ${currency(product.cost)}`
+                            : "cost not set"}
+                        </p>
+                      </div>
                     </div>
+                    <p
+                      className="product-margin"
+                      data-tone={productTone(product)}
+                    >
+                      {productMarginLabel(product)}
+                    </p>
                     {product.notes && <p className="product-notes">{product.notes}</p>}
                     <div className="inline-actions">
                       <button
@@ -2549,6 +2747,27 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 
 function Chip({ label }: { label: string }) {
   return <span className={`chip ${statusClass(label)}`}>{label}</span>;
+}
+
+function compactCurrency(value: number) {
+  const sign = value < 0 ? "-" : "";
+  const size = Math.abs(value);
+  if (size >= 100000) return `${sign}\u20B9${(size / 100000).toFixed(1)}L`;
+  if (size >= 1000) return `${sign}\u20B9${(size / 1000).toFixed(1)}k`;
+  return `${sign}\u20B9${size}`;
+}
+
+function productMarginLabel(product: Product) {
+  const cost = Number(product.cost) || 0;
+  if (cost <= 0) return "Cost not set";
+  const profit = product.price - cost;
+  return `${currency(profit)} profit · ${marginPercent(profit, product.price)}%`;
+}
+
+function productTone(product: Product) {
+  const cost = Number(product.cost) || 0;
+  if (cost <= 0) return "muted";
+  return product.price - cost > 0 ? "good" : "bad";
 }
 
 function statusClass(value: string) {
