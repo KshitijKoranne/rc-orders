@@ -817,6 +817,10 @@ export default function Home() {
           product.id === editingProductId ? { ...product, ...cleanProduct } : product,
         ),
       );
+      setNotice(`${cleanProduct.rCode} saved.`);
+      resetProductForm();
+      setActiveTab("catalogue");
+      return;
     } else {
       setIsDirty(true);
       setProducts((current) => [

@@ -14,6 +14,27 @@ export const runtime = "nodejs";
 const maxImageLength = 20_000_000;
 const thumbnailSize = 256;
 
+// Thumbnails are made once per image, then held in memory. Nothing is written to the database.
+const thumbnailCache = new Map<string, Buffer>();
+const thumbnailCacheLimit = 300;
+
+function readThumbnailCache(key: string) {
+  const cached = thumbnailCache.get(key);
+  if (!cached) return undefined;
+  // Re-insert so the oldest key stays at the front for eviction.
+  thumbnailCache.delete(key);
+  thumbnailCache.set(key, cached);
+  return cached;
+}
+
+function writeThumbnailCache(key: string, body: Buffer) {
+  if (thumbnailCache.size >= thumbnailCacheLimit) {
+    const oldest = thumbnailCache.keys().next().value;
+    if (oldest !== undefined) thumbnailCache.delete(oldest);
+  }
+  thumbnailCache.set(key, body);
+}
+
 function errorResponse(message: string, status: number) {
   return Response.json({ error: message }, { status });
 }
@@ -72,12 +93,41 @@ export async function GET(
 
     const db = await getDb();
     const [product] = await db
-      .select({ image: productsTable.image })
+      .select({ image: productsTable.image, imageHash: productsTable.imageHash })
       .from(productsTable)
       .where(eq(productsTable.id, id))
       .limit(1);
 
     if (!product?.image) return errorResponse("Image not found", 404);
+
+    // Versioned URLs change when a product image changes, so browsers can keep optimized bytes.
+    const hasVersion = Boolean(searchParams.get("v"));
+    const cacheControl = hasVersion
+      ? "private, max-age=31536000, immutable"
+      : "private, no-cache";
+    const version =
+      product.imageHash || createHash("sha256").update(product.image).digest("hex");
+    const etag = `"${variant || "full"}-${version}"`;
+
+    // The ETag follows the stored image, so a revalidation decodes and resizes nothing.
+    if (request.headers.get("if-none-match") === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: { ETag: etag, "Cache-Control": cacheControl },
+      });
+    }
+
+    const cached = variant === "thumbnail" ? readThumbnailCache(etag) : undefined;
+    if (cached) {
+      return withSessionCookie(
+        new Response(cached as unknown as BodyInit, {
+          headers: { "Cache-Control": cacheControl, ETag: etag, "Content-Type": "image/webp" },
+        }),
+        session,
+        request,
+      );
+    }
+
     if (product.image.length > maxImageLength) {
       console.error("Stored product image is too large", { id });
       return errorResponse("Image unavailable", 503);
@@ -96,27 +146,14 @@ export async function GET(
       if (thumbnail) {
         body = thumbnail;
         contentType = "image/webp";
+        writeThumbnailCache(etag, thumbnail);
       }
     }
 
-    const hasVersion = Boolean(searchParams.get("v"));
-    const etag = `"${createHash("sha256")
-      .update(contentType)
-      .update("\0")
-      .update(body)
-      .digest("hex")}"`;
-    const headers = {
-      // Versioned URLs change when a product image changes, so browsers can keep optimized bytes.
-      "Cache-Control": hasVersion ? "private, max-age=31536000, immutable" : "private, no-cache",
-      ETag: etag,
-      "Content-Type": contentType,
-    };
-    if (request.headers.get("if-none-match") === etag) {
-      return new Response(null, { status: 304, headers });
-    }
-
     return withSessionCookie(
-      new Response(body as unknown as BodyInit, { headers }),
+      new Response(body as unknown as BodyInit, {
+        headers: { "Cache-Control": cacheControl, ETag: etag, "Content-Type": contentType },
+      }),
       session,
       request,
     );
