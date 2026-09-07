@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { sql } from "drizzle-orm";
 import { orders as ordersTable, products as productsTable } from "../../../db/schema";
 import { isProductImageUrl, productImageUrl } from "../../../lib/image";
+import { makeStoredThumbnail } from "../../../lib/thumbnail";
 import { derivePaymentStatus, orderTotal } from "../../../lib/order-logic";
 import {
   refreshSessionFromRequest,
@@ -187,7 +188,18 @@ export async function GET(request: Request) {
   try {
     const db = await getDb();
     const productsPromise = includeImages
-      ? db.select().from(productsTable)
+      ? db
+          .select({
+            id: productsTable.id,
+            rCode: productsTable.rCode,
+            name: productsTable.name,
+            price: productsTable.price,
+            cost: productsTable.cost,
+            image: productsTable.image,
+            notes: productsTable.notes,
+            createdAt: productsTable.createdAt,
+          })
+          .from(productsTable)
       : db
           .select({
             id: productsTable.id,
@@ -246,15 +258,32 @@ export async function PUT(request: Request) {
     // ponytail: a full snapshot keeps the single-user app simple; split mutations only if usage grows beyond this small VPS workflow.
     await db.transaction(async (transaction) => {
       const storedProducts = await transaction
-        .select({ id: productsTable.id, image: productsTable.image })
+        .select({
+          id: productsTable.id,
+          image: productsTable.image,
+          imageThumb: productsTable.imageThumb,
+        })
         .from(productsTable);
       const storedImages = new Map(storedProducts.map((product) => [product.id, product.image]));
-      const productsWithImages = products
-        .map((product) => mergeStoredImage(product, storedImages.get(product.id)))
-        .map((product) => ({
-          ...product,
-          imageHash: imageVersion(product.image),
-        }));
+      const storedThumbs = new Map(
+        storedProducts.map((product) => [product.id, product.imageThumb]),
+      );
+      const merged = products.map((product) =>
+        mergeStoredImage(product, storedImages.get(product.id)),
+      );
+      // The thumbnail is made once, here, and only when the image itself changed.
+      // An unchanged product reuses its stored thumbnail, so a save never re-encodes the catalogue.
+      const productsWithImages = await Promise.all(
+        merged.map(async (product) => {
+          const storedThumb = storedThumbs.get(product.id) ?? "";
+          const imageUnchanged = storedImages.get(product.id) === product.image;
+          const imageThumb =
+            imageUnchanged && storedThumb
+              ? storedThumb
+              : await makeStoredThumbnail(product.image);
+          return { ...product, imageHash: imageVersion(product.image), imageThumb };
+        }),
+      );
 
       await transaction.delete(ordersTable);
       await transaction.delete(productsTable);

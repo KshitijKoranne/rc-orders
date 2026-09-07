@@ -38,6 +38,12 @@ async function ensureSchema(sql: SqlClient) {
     ALTER TABLE rithya_products
     ADD COLUMN IF NOT EXISTS image_hash text NOT NULL DEFAULT ''
   `;
+  // Additive only. A constant default makes this metadata-only on Postgres 11+,
+  // so no existing row is rewritten and no existing column is touched.
+  await sql`
+    ALTER TABLE rithya_products
+    ADD COLUMN IF NOT EXISTS image_thumb text NOT NULL DEFAULT ''
+  `;
   await sql`
     ALTER TABLE rithya_products
     ADD COLUMN IF NOT EXISTS cost integer NOT NULL DEFAULT 0

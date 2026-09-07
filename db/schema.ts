@@ -8,6 +8,7 @@ export const products = pgTable("rithya_products", {
   cost: integer("cost").notNull().default(0),
   image: text("image").notNull().default(""),
   imageHash: text("image_hash").notNull().default(""),
+  imageThumb: text("image_thumb").notNull().default(""),
   notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull(),
 });

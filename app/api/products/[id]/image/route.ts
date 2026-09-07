@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { Buffer } from "node:buffer";
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../../db";
 import { products as productsTable } from "../../../../../db/schema";
+import { decodeImageDataUrl, makeStoredThumbnail } from "../../../../../lib/thumbnail";
 import {
   refreshSessionFromRequest,
   unauthorizedResponse,
@@ -12,69 +12,9 @@ import {
 export const runtime = "nodejs";
 
 const maxImageLength = 20_000_000;
-const thumbnailSize = 256;
-
-// Thumbnails are made once per image, then held in memory. Nothing is written to the database.
-const thumbnailCache = new Map<string, Buffer>();
-const thumbnailCacheLimit = 300;
-
-function readThumbnailCache(key: string) {
-  const cached = thumbnailCache.get(key);
-  if (!cached) return undefined;
-  // Re-insert so the oldest key stays at the front for eviction.
-  thumbnailCache.delete(key);
-  thumbnailCache.set(key, cached);
-  return cached;
-}
-
-function writeThumbnailCache(key: string, body: Buffer) {
-  if (thumbnailCache.size >= thumbnailCacheLimit) {
-    const oldest = thumbnailCache.keys().next().value;
-    if (oldest !== undefined) thumbnailCache.delete(oldest);
-  }
-  thumbnailCache.set(key, body);
-}
 
 function errorResponse(message: string, status: number) {
   return Response.json({ error: message }, { status });
-}
-
-function decodeImageDataUrl(value: string) {
-  const match = value.match(/^data:(image\/[a-z0-9.+-]+)((?:;[^,]*)?),([\s\S]*)$/i);
-  if (!match) return null;
-
-  try {
-    const encoded = match[3];
-    if (!/(?:^|;)base64$/i.test(match[2])) return null;
-    const bytes = /^[A-Za-z0-9+/]*={0,2}$/.test(encoded) && encoded.length % 4 === 0
-      ? Buffer.from(encoded, "base64")
-      : null;
-    if (!bytes?.length) return null;
-    return { contentType: match[1].toLowerCase(), bytes };
-  } catch {
-    return null;
-  }
-}
-
-async function makeThumbnail(bytes: Buffer) {
-  if (process.env.RITHYA_NODE_RUNTIME !== "1") return null;
-
-  try {
-    const { default: sharp } = await import("sharp");
-    return await sharp(bytes)
-      .rotate()
-      .resize({
-        width: thumbnailSize,
-        height: thumbnailSize,
-        fit: "cover",
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 78 })
-      .toBuffer();
-  } catch (error) {
-    console.error("Could not create product image thumbnail", error);
-    return null;
-  }
 }
 
 export async function GET(
@@ -93,7 +33,11 @@ export async function GET(
 
     const db = await getDb();
     const [product] = await db
-      .select({ image: productsTable.image, imageHash: productsTable.imageHash })
+      .select({
+        image: productsTable.image,
+        imageHash: productsTable.imageHash,
+        imageThumb: productsTable.imageThumb,
+      })
       .from(productsTable)
       .where(eq(productsTable.id, id))
       .limit(1);
@@ -117,42 +61,41 @@ export async function GET(
       });
     }
 
-    const cached = variant === "thumbnail" ? readThumbnailCache(etag) : undefined;
-    if (cached) {
-      return withSessionCookie(
-        new Response(cached as unknown as BodyInit, {
-          headers: { "Cache-Control": cacheControl, ETag: etag, "Content-Type": "image/webp" },
-        }),
-        session,
-        request,
-      );
+    let source = product.image;
+    if (variant === "thumbnail") {
+      let thumb = product.imageThumb;
+      if (!thumb) {
+        // Backfill for a product saved before thumbnails were stored. This writes
+        // image_thumb for this one row and reads or changes nothing else.
+        thumb = await makeStoredThumbnail(product.image);
+        if (thumb) {
+          await db
+            .update(productsTable)
+            .set({ imageThumb: thumb })
+            .where(eq(productsTable.id, id));
+        }
+      }
+      if (thumb) source = thumb;
     }
 
-    if (product.image.length > maxImageLength) {
+    if (source.length > maxImageLength) {
       console.error("Stored product image is too large", { id });
       return errorResponse("Image unavailable", 503);
     }
 
-    const decoded = decodeImageDataUrl(product.image);
+    const decoded = decodeImageDataUrl(source);
     if (!decoded) {
       console.error("Stored product image is invalid", { id });
       return errorResponse("Image unavailable", 503);
     }
 
-    let body: Buffer<ArrayBufferLike> = decoded.bytes;
-    let contentType = decoded.contentType;
-    if (variant === "thumbnail") {
-      const thumbnail = await makeThumbnail(decoded.bytes);
-      if (thumbnail) {
-        body = thumbnail;
-        contentType = "image/webp";
-        writeThumbnailCache(etag, thumbnail);
-      }
-    }
-
     return withSessionCookie(
-      new Response(body as unknown as BodyInit, {
-        headers: { "Cache-Control": cacheControl, ETag: etag, "Content-Type": contentType },
+      new Response(decoded.bytes as unknown as BodyInit, {
+        headers: {
+          "Cache-Control": cacheControl,
+          ETag: etag,
+          "Content-Type": decoded.contentType,
+        },
       }),
       session,
       request,
