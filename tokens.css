@@ -1,29 +1,29 @@
-/* Rithya Creations · token system · theme: warm workshop, 2026 refresh */
+/* Rithya Creations · token system · theme: gulab and genda */
 
 :root {
   color-scheme: light dark;
 
-  /* Brand surfaces — warm paper, hue unchanged */
-  --color-paper: oklch(97.4% 0.012 84);
-  --color-paper-deep: oklch(93.5% 0.024 78);
-  --color-surface: oklch(99.4% 0.007 86);
-  --color-surface-muted: oklch(96.2% 0.016 82);
-  --color-surface-raised: oklch(100% 0 0);
+  /* Surfaces — rose wax */
+  --color-paper: #FBF0F2;
+  --color-paper-deep: #F5E1E6;
+  --color-surface: #FFFBFC;
+  --color-surface-muted: #F8E9ED;
+  --color-surface-raised: #FFFFFF;
 
-  --color-ink: oklch(21% 0.026 55);
-  --color-ink-soft: oklch(38% 0.026 60);
-  --color-muted: oklch(51% 0.028 64);
+  --color-ink: #3A1631;
+  --color-ink-soft: #5E3453;
+  --color-muted: #86607A;
 
-  --color-rule: oklch(89% 0.02 77);
-  --color-rule-strong: oklch(78% 0.038 67);
+  --color-rule: #F0D5DC;
+  --color-rule-strong: #DDB3C0;
 
-  /* Brand accents — moss and clay retained */
-  --color-moss: oklch(45% 0.11 148);
-  --color-moss-ink: oklch(98% 0.012 85);
-  --color-moss-soft: oklch(93% 0.05 145);
-  --color-clay: oklch(60% 0.15 46);
-  --color-clay-ink: oklch(21% 0.026 55);
-  --color-clay-soft: oklch(93% 0.05 48);
+  /* Accents — berry (primary) and marigold */
+  --color-berry: #8C1D4E;
+  --color-berry-ink: #FFF5F7;
+  --color-berry-soft: #F7DDE5;
+  --color-marigold: #E99A0B;
+  --color-marigold-ink: #6B4400;
+  --color-marigold-soft: #FCEBC4;
 
   --color-warning: oklch(58% 0.14 62);
   --color-warning-soft: oklch(94% 0.05 80);
@@ -32,7 +32,7 @@
   --color-info: oklch(50% 0.11 232);
   --color-info-soft: oklch(94% 0.035 232);
   --color-focus: oklch(52% 0.15 250);
-  --color-overlay: oklch(21% 0.026 55 / 0.72);
+  --color-overlay: rgb(58 22 49 / 0.72);
 
   --font-ui: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-code: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
@@ -63,10 +63,10 @@
 
   --hairline: 1px solid var(--color-rule);
 
-  --shadow-xs: 0 1px 2px oklch(21% 0.026 55 / 0.05);
-  --shadow-sm: 0 1px 2px oklch(21% 0.026 55 / 0.05), 0 2px 8px oklch(21% 0.026 55 / 0.04);
-  --shadow-md: 0 2px 4px oklch(21% 0.026 55 / 0.05), 0 8px 24px oklch(21% 0.026 55 / 0.07);
-  --shadow-lg: 0 4px 8px oklch(21% 0.026 55 / 0.06), 0 20px 48px oklch(21% 0.026 55 / 0.1);
+  --shadow-xs: 0 1px 2px rgb(58 22 49 / 0.05);
+  --shadow-sm: 0 1px 2px rgb(58 22 49 / 0.05), 0 2px 8px rgb(58 22 49 / 0.04);
+  --shadow-md: 0 2px 4px rgb(58 22 49 / 0.05), 0 8px 24px rgb(58 22 49 / 0.07);
+  --shadow-lg: 0 4px 8px rgb(58 22 49 / 0.06), 0 20px 48px rgb(58 22 49 / 0.1);
   --shadow-popover: var(--shadow-lg);
 
   --duration-fast: 130ms;
@@ -78,25 +78,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-paper: oklch(19% 0.014 62);
-    --color-paper-deep: oklch(15% 0.012 62);
-    --color-surface: oklch(23% 0.015 62);
-    --color-surface-muted: oklch(26.5% 0.016 62);
-    --color-surface-raised: oklch(27.5% 0.017 62);
+    --color-paper: #1E1019;
+    --color-paper-deep: #170B13;
+    --color-surface: #26141F;
+    --color-surface-muted: #2D1825;
+    --color-surface-raised: #331B2A;
 
-    --color-ink: oklch(95% 0.012 85);
-    --color-ink-soft: oklch(80% 0.014 78);
-    --color-muted: oklch(66% 0.016 74);
+    --color-ink: #FBEFF2;
+    --color-ink-soft: #E3C9D3;
+    --color-muted: #B892A6;
 
-    --color-rule: oklch(32% 0.016 62);
-    --color-rule-strong: oklch(44% 0.022 64);
+    --color-rule: #3D2433;
+    --color-rule-strong: #573548;
 
-    --color-moss: oklch(72% 0.13 148);
-    --color-moss-ink: oklch(17% 0.02 60);
-    --color-moss-soft: oklch(32% 0.06 148);
-    --color-clay: oklch(74% 0.14 52);
-    --color-clay-ink: oklch(17% 0.02 60);
-    --color-clay-soft: oklch(33% 0.07 48);
+    --color-berry: #F08DB5;
+    --color-berry-ink: #2A0E1E;
+    --color-berry-soft: #4A1B33;
+    --color-marigold: #F5B53D;
+    --color-marigold-ink: #FFD98A;
+    --color-marigold-soft: #4A3310;
 
     --color-warning: oklch(78% 0.13 72);
     --color-warning-soft: oklch(31% 0.06 72);
@@ -105,7 +105,7 @@
     --color-info: oklch(75% 0.11 232);
     --color-info-soft: oklch(30% 0.06 232);
     --color-focus: oklch(72% 0.14 250);
-    --color-overlay: oklch(10% 0.01 60 / 0.8);
+    --color-overlay: rgb(23 11 19 / 0.8);
 
     --shadow-xs: 0 1px 2px oklch(0% 0 0 / 0.3);
     --shadow-sm: 0 1px 2px oklch(0% 0 0 / 0.3), 0 2px 8px oklch(0% 0 0 / 0.25);

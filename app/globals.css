@@ -86,7 +86,7 @@ h3 {
 }
 
 ::selection {
-  background: var(--color-clay-soft);
+  background: var(--color-marigold-soft);
   color: var(--color-ink);
 }
 
@@ -113,7 +113,7 @@ h3 {
   min-height: 100dvh;
   place-items: center;
   padding: var(--space-lg);
-  border-top: 4px solid var(--color-moss);
+  border-top: 4px solid var(--color-berry);
   background: var(--color-paper);
 }
 
@@ -121,7 +121,7 @@ h3 {
   width: min(100%, 430px);
   padding: clamp(var(--space-lg), 6vw, var(--space-2xl));
   border: var(--hairline);
-  border-top: 4px solid var(--color-clay);
+  border-top: 4px solid var(--color-marigold);
   background: var(--color-surface);
   box-shadow: var(--shadow-popover);
 }
@@ -190,9 +190,9 @@ h3 {
 .login-error {
   margin-top: var(--space-md);
   padding: var(--space-sm) var(--space-md);
-  border-left: 3px solid var(--color-clay);
-  background: var(--color-clay-soft);
-  color: var(--color-clay-ink);
+  border-left: 3px solid var(--color-marigold);
+  background: var(--color-marigold-soft);
+  color: var(--color-marigold-ink);
   font-size: var(--text-sm);
   line-height: 1.5;
 }
@@ -207,7 +207,7 @@ h3 {
   top: 0;
   z-index: 20;
   background: var(--color-paper);
-  border-top: 4px solid var(--color-moss);
+  border-top: 4px solid var(--color-berry);
   border-bottom: var(--hairline);
 }
 
@@ -239,10 +239,10 @@ h3 {
   width: 42px;
   height: 42px;
   place-items: center;
-  border: 1px solid var(--color-moss);
+  border: 1px solid var(--color-berry);
   border-radius: var(--radius-sm);
-  background: var(--color-moss);
-  color: var(--color-moss-ink);
+  background: var(--color-berry);
+  color: var(--color-berry-ink);
   font-family: var(--font-code);
   font-size: var(--text-sm);
   font-weight: 700;
@@ -279,11 +279,11 @@ h3 {
 }
 
 .sync-status.connected {
-  color: var(--color-moss);
+  color: var(--color-berry);
 }
 
 .sync-status.saving {
-  color: var(--color-clay);
+  color: color-mix(in oklch, var(--color-marigold) 55%, var(--color-ink));
 }
 
 .sync-status.failed,
@@ -324,9 +324,9 @@ h3 {
 
 .tool-button:hover:not(:disabled),
 .secondary-button:hover:not(:disabled) {
-  border-color: var(--color-moss);
-  background: var(--color-moss-soft);
-  color: var(--color-moss);
+  border-color: var(--color-berry);
+  background: var(--color-berry-soft);
+  color: var(--color-berry);
 }
 
 .file-trigger {
@@ -347,10 +347,10 @@ h3 {
   justify-content: space-between;
   gap: var(--space-md);
   padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--color-clay);
+  border: 1px solid var(--color-marigold);
   border-radius: var(--radius-sm);
-  background: var(--color-clay-soft);
-  color: var(--color-clay-ink);
+  background: var(--color-marigold-soft);
+  color: var(--color-marigold-ink);
   font-size: var(--text-sm);
 }
 
@@ -359,7 +359,7 @@ h3 {
   padding: 0 var(--space-sm);
   border: 0;
   background: transparent;
-  color: var(--color-clay-ink);
+  color: var(--color-marigold-ink);
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -400,7 +400,7 @@ h3 {
 }
 
 .tab-button.active {
-  border-bottom-color: var(--color-clay);
+  border-bottom-color: var(--color-marigold);
   color: var(--color-ink);
 }
 
@@ -420,8 +420,8 @@ h3 {
 }
 
 .tab-button.active .tab-count {
-  background: var(--color-moss-soft);
-  color: var(--color-moss);
+  background: var(--color-berry-soft);
+  color: var(--color-berry);
 }
 
 .work-summary {
@@ -436,7 +436,7 @@ h3 {
 .work-summary-lead {
   align-self: center;
   padding-left: var(--space-md);
-  border-left: 4px solid var(--color-clay);
+  border-left: 4px solid var(--color-marigold);
 }
 
 .section-kicker,
@@ -575,8 +575,8 @@ h3 {
   font-size: var(--text-xs);
 }
 
-.dashboard-metric.tone-moss .dashboard-metric-value {
-  color: var(--color-moss);
+.dashboard-metric.tone-berry .dashboard-metric-value {
+  color: var(--color-berry);
 }
 
 .dashboard-metric.tone-warn .dashboard-metric-value {
@@ -668,14 +668,14 @@ h3 {
 
 .donut-segment.status-in-progress,
 .status-dot.status-in-progress {
-  stroke: var(--color-clay);
-  background: var(--color-clay);
+  stroke: var(--color-marigold);
+  background: var(--color-marigold);
 }
 
 .donut-segment.status-ready,
 .status-dot.status-ready {
-  stroke: var(--color-moss);
-  background: var(--color-moss);
+  stroke: var(--color-berry);
+  background: var(--color-berry);
 }
 
 .donut-segment.status-delivered,
@@ -767,12 +767,12 @@ h3 {
 
 .bar-fill {
   width: 100%;
-  background: var(--color-moss);
+  background: var(--color-berry);
   transition: height var(--duration-normal) var(--ease-standard);
 }
 
 .month-bar:nth-child(2n) .bar-fill {
-  background: var(--color-clay);
+  background: var(--color-marigold);
 }
 
 .month-bar:nth-child(3n) .bar-fill {
@@ -810,7 +810,7 @@ h3 {
 
 .dashboard-queue-row:hover,
 .recent-order-row:hover {
-  color: var(--color-moss);
+  color: var(--color-berry);
 }
 
 .dashboard-queue-row strong,
@@ -844,7 +844,7 @@ h3 {
   display: grid;
   gap: var(--space-2xs);
   padding-block: var(--space-2xs);
-  border-block: 1px solid color-mix(in oklch, var(--color-moss-ink) 24%, transparent);
+  border-block: 1px solid color-mix(in oklch, var(--color-berry-ink) 24%, transparent);
   font-size: var(--text-xs);
 }
 
@@ -994,13 +994,13 @@ h3 {
 
 .primary-button {
   padding-inline: var(--space-lg);
-  border-color: var(--color-moss);
-  background: var(--color-moss);
-  color: var(--color-moss-ink);
+  border-color: var(--color-berry);
+  background: var(--color-berry);
+  color: var(--color-berry-ink);
 }
 
 .primary-button:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--color-moss) 86%, var(--color-ink));
+  background: color-mix(in oklch, var(--color-berry) 86%, var(--color-ink));
   transform: translateY(-1px);
 }
 
@@ -1027,14 +1027,14 @@ h3 {
   padding-inline: var(--space-xs);
   border-color: transparent;
   background: transparent;
-  color: var(--color-moss);
+  color: var(--color-berry);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 
 .text-button:hover:not(:disabled) {
-  color: var(--color-clay);
+  color: color-mix(in oklch, var(--color-marigold) 55%, var(--color-ink));
 }
 
 .order-form-layout {
@@ -1056,13 +1056,13 @@ h3 {
   gap: var(--space-xs);
   padding: var(--space-lg);
   border-radius: var(--radius-md);
-  background: var(--color-moss);
-  color: var(--color-moss-ink);
+  background: var(--color-berry);
+  color: var(--color-berry-ink);
 }
 
 .order-total-panel .field-label,
 .order-total-panel span {
-  color: color-mix(in oklch, var(--color-moss-ink) 76%, transparent);
+  color: color-mix(in oklch, var(--color-berry-ink) 76%, transparent);
 }
 
 .order-total-panel strong {
@@ -1224,7 +1224,7 @@ h3 {
 }
 
 .code-label {
-  color: var(--color-clay);
+  color: color-mix(in oklch, var(--color-marigold) 55%, var(--color-ink));
 }
 
 .product-price {
@@ -1338,13 +1338,13 @@ h3 {
 
 .queue-button:hover,
 .queue-button.active {
-  border-color: var(--color-moss);
-  background: var(--color-moss-soft);
-  color: var(--color-moss);
+  border-color: var(--color-berry);
+  background: var(--color-berry-soft);
+  color: var(--color-berry);
 }
 
 .queue-button.active strong {
-  color: var(--color-moss);
+  color: var(--color-berry);
 }
 
 .orders-table-wrap {
@@ -1445,13 +1445,13 @@ h3 {
 }
 
 .order-items-toggle.expanded {
-  border-color: var(--color-moss);
-  background: var(--color-moss-soft);
-  color: var(--color-moss);
+  border-color: var(--color-berry);
+  background: var(--color-berry-soft);
+  color: var(--color-berry);
 }
 
 .order-items-toggle-icon {
-  color: var(--color-moss);
+  color: var(--color-berry);
   font-family: var(--font-code);
   font-size: var(--text-md);
   line-height: 1;
@@ -1505,16 +1505,16 @@ h3 {
 
 .chip.paid,
 .chip.ready {
-  border-color: var(--color-moss);
-  background: var(--color-moss-soft);
-  color: var(--color-moss);
+  border-color: var(--color-berry);
+  background: var(--color-berry-soft);
+  color: var(--color-berry);
 }
 
 .chip.partial,
 .chip.in-progress {
-  border-color: var(--color-clay);
-  background: var(--color-clay-soft);
-  color: var(--color-clay-ink);
+  border-color: var(--color-marigold);
+  background: var(--color-marigold-soft);
+  color: var(--color-marigold-ink);
 }
 
 .chip.pending,
@@ -1759,7 +1759,7 @@ h3 {
 
 .rcode-option:hover,
 .rcode-option.highlighted {
-  background: var(--color-moss-soft);
+  background: var(--color-berry-soft);
 }
 
 .rcode-empty {
@@ -2123,7 +2123,7 @@ h3 {
 
 /* =========================================================================
    2026 refresh layer
-   Brand name, logo, and the paper/moss/clay palette are unchanged.
+   Brand name and logo are unchanged. Palette: gulab and genda.
    Everything below restyles structure, depth, type, and motion.
    ========================================================================= */
 
@@ -2279,7 +2279,7 @@ body {
   padding: clamp(var(--space-lg), 3vw, var(--space-xl));
   border-radius: var(--radius-lg);
   background:
-    radial-gradient(110% 140% at 0% 0%, var(--color-moss-soft) 0%, transparent 62%),
+    radial-gradient(110% 140% at 0% 0%, var(--color-berry-soft) 0%, transparent 62%),
     var(--color-surface-muted);
   border: var(--hairline);
   box-shadow: var(--shadow-sm);
@@ -2400,11 +2400,11 @@ body {
 }
 
 .key-revenue {
-  background: var(--color-moss);
+  background: var(--color-berry);
 }
 
 .key-cost {
-  background: var(--color-clay);
+  background: var(--color-marigold);
 }
 
 .monthly-chart {
@@ -2437,11 +2437,11 @@ body {
 }
 
 .bar-revenue {
-  background: var(--color-moss);
+  background: var(--color-berry);
 }
 
 .bar-cost {
-  background: var(--color-clay);
+  background: var(--color-marigold);
 }
 
 .month-profit {
@@ -2452,7 +2452,7 @@ body {
 }
 
 [data-tone="good"] {
-  color: var(--color-moss);
+  color: var(--color-berry);
 }
 
 [data-tone="bad"] {

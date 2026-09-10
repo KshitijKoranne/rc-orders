@@ -16,8 +16,8 @@ Rithya Creations is a maker's workbench, not an ERP dashboard. The interface sho
 - Typography: existing Geist and Geist Mono from app/layout.tsx
 - Voice: plain, specific, calm
 
-The visual system uses warm paper, dark ink, moss for primary actions, and a
-restrained clay accent. These brand colours do not change.
+The visual system uses rose-wax paper, plum ink, berry for primary actions, and a
+marigold accent (palette "Gulab and genda", chosen by the owner).
 
 The refresh permits:
 

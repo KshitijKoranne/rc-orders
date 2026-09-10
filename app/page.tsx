@@ -1374,7 +1374,7 @@ export default function Home() {
               <DashboardMetric
                 label="Cash collected"
                 note="Payments recorded"
-                tone="moss"
+                tone="berry"
                 value={currency(totals.collected)}
               />
               <DashboardMetric
@@ -2276,7 +2276,7 @@ function DashboardMetric({
   label: string;
   value: string;
   note: string;
-  tone?: "moss" | "warn";
+  tone?: "berry" | "warn";
 }) {
   return (
     <article className={`dashboard-metric ${tone ? `tone-${tone}` : ""}`}>
