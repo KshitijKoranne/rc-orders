@@ -75,3 +75,38 @@ export function marginPercent(profit: number, revenue: number) {
   if (revenue <= 0) return 0;
   return Math.round((profit / revenue) * 1000) / 10;
 }
+
+/** Catalogue order: R-0002 before R-0010 before R-10000. */
+export function compareRCode(a: { rCode: string }, b: { rCode: string }) {
+  return a.rCode.localeCompare(b.rCode, undefined, { numeric: true });
+}
+
+/**
+ * One fragrance per unit, stored in the item's existing `fragrance` text as "Rose, Jasmin".
+ * A single stored value means every unit has that fragrance (old orders read this way).
+ */
+export function unitFragrances(fragrance: string, quantity: number) {
+  const count = Math.min(Math.max(Math.floor(Number(quantity)) || 1, 1), 100);
+  const parts = fragrance ? fragrance.split(",").map((part) => part.trim()) : [];
+  return Array.from({ length: count }, (_, index) =>
+    parts.length === 1 ? parts[0] : (parts[index] ?? ""),
+  );
+}
+
+/** Stored form: "" when none, one value when all units match, else one entry per unit. */
+export function storedFragrance(fragrance: string, quantity: number) {
+  const units = unitFragrances(fragrance, quantity);
+  if (!units.some(Boolean)) return "";
+  return new Set(units).size === 1 ? units[0] : units.join(", ");
+}
+
+/** Display form: "Rose ×2, Jasmin". */
+export function fragranceSummary(fragrance: string) {
+  const counts = new Map<string, number>();
+  fragrance
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => counts.set(part, (counts.get(part) ?? 0) + 1));
+  return [...counts].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)).join(", ");
+}

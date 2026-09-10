@@ -20,6 +20,10 @@ import {
   orderGoodsRevenue,
   orderProfit,
   marginPercent,
+  compareRCode,
+  unitFragrances,
+  storedFragrance,
+  fragranceSummary,
 } from "../lib/order-logic";
 import { originalProductImageUrl } from "../lib/image";
 
@@ -472,6 +476,8 @@ export default function Home() {
     return () => window.clearTimeout(saveTimer);
   }, [databaseConnected, isDirty, isLoaded, orders, products]);
 
+  const sortedProducts = useMemo(() => [...products].sort(compareRCode), [products]);
+
   const productByCode = useMemo(() => {
     const byCode = new Map<string, Product>();
     products.forEach((product) => {
@@ -848,7 +854,7 @@ export default function Home() {
       return {
         ...item,
         rCode: normalizeRCode(item.rCode),
-        fragrance: item.fragrance.trim(),
+        fragrance: storedFragrance(item.fragrance, quantity),
         product: item.product.trim(),
         quantity,
         unitPrice,
@@ -1799,7 +1805,7 @@ export default function Home() {
                               <label htmlFor={`orderRCode-${item.id}`}>R-code</label>
                               <RCodePicker
                                 id={`orderRCode-${item.id}`}
-                                products={products}
+                                products={sortedProducts}
                                 value={item.rCode}
                                 onChange={(value) => updateOrderItem(index, "rCode", value)}
                                 onCreateProduct={startNewProduct}
@@ -1831,21 +1837,38 @@ export default function Home() {
                               />
                             </div>
                             <div className="field">
-                              <label htmlFor={`fragrance-${item.id}`}>Fragrance</label>
-                              <select
-                                id={`fragrance-${item.id}`}
-                                value={item.fragrance}
-                                onChange={(event) =>
-                                  updateOrderItem(index, "fragrance", event.target.value)
-                                }
-                              >
-                                <option value="">Select fragrance</option>
-                                {fragranceOptions.map((fragrance) => (
-                                  <option key={fragrance} value={fragrance}>
-                                    {fragrance}
-                                  </option>
-                                ))}
-                              </select>
+                              <label htmlFor={`fragrance-${item.id}-0`}>
+                                {Number(item.quantity) > 1 ? "Fragrance per unit" : "Fragrance"}
+                              </label>
+                              <div className="unit-fragrances">
+                                {unitFragrances(item.fragrance, Number(item.quantity)).map(
+                                  (unitFragrance, unit, units) => (
+                                    <select
+                                      key={unit}
+                                      id={`fragrance-${item.id}-${unit}`}
+                                      aria-label={units.length > 1 ? `Unit ${unit + 1} fragrance` : undefined}
+                                      value={unitFragrance}
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        // Later empty units copy this choice, so "all Rose" is one pick.
+                                        const next = units.map((current, other) =>
+                                          other === unit || (other > unit && !current) ? value : current,
+                                        );
+                                        updateOrderItem(index, "fragrance", next.join(", "));
+                                      }}
+                                    >
+                                      <option value="">
+                                        {units.length > 1 ? `Unit ${unit + 1}` : "Select fragrance"}
+                                      </option>
+                                      {fragranceOptions.map((fragrance) => (
+                                        <option key={fragrance} value={fragrance}>
+                                          {fragrance}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ),
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -2010,7 +2033,7 @@ export default function Home() {
             </div>
 
             <div className="product-grid">
-              {products.map((product) => (
+              {sortedProducts.map((product) => (
                 <article className="product-card" key={product.id}>
                       <ProductImage product={product} onEnlarge={openImageViewer} />
                   <div className="product-card-body">
@@ -2691,7 +2714,7 @@ function OrderItemsSummary({ items }: { items: OrderItem[] }) {
           </div>
           <p className="muted-line">
             Qty {item.quantity} x {currency(item.unitPrice)} = {currency(item.amount)}
-            {item.fragrance ? ` | ${item.fragrance}` : ""}
+            {item.fragrance ? ` | ${fragranceSummary(item.fragrance)}` : ""}
           </p>
         </div>
       ))}

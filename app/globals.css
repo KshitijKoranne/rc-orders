@@ -2656,3 +2656,9 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+.unit-fragrances {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: var(--space-xs);
+}

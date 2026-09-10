@@ -39,3 +39,20 @@ test("does not count delivered or cancelled orders as active", () => {
   assert.equal(isActiveOrderStatus("Cancelled"), false);
   assert.equal(isActiveOrderStatus("Ready"), true);
 });
+
+test("sorts R-codes by serial number", async () => {
+  const { compareRCode } = await import("../lib/order-logic.ts");
+  const codes = ["R-0010", "R-10000", "R-0002", "R-0001"].map((rCode) => ({ rCode }));
+  assert.deepEqual(codes.sort(compareRCode).map((c) => c.rCode), ["R-0001", "R-0002", "R-0010", "R-10000"]);
+});
+
+test("keeps one fragrance per unit", async () => {
+  const { unitFragrances, storedFragrance, fragranceSummary } = await import("../lib/order-logic.ts");
+  assert.deepEqual(unitFragrances("Rose", 2), ["Rose", "Rose"]);
+  assert.deepEqual(unitFragrances("Rose, Jasmin", 3), ["Rose", "Jasmin", ""]);
+  assert.deepEqual(unitFragrances("", 2), ["", ""]);
+  assert.equal(storedFragrance("Rose, Rose", 2), "Rose");
+  assert.equal(storedFragrance("Rose, Jasmin, Mogra", 2), "Rose, Jasmin");
+  assert.equal(storedFragrance(", ", 2), "");
+  assert.equal(fragranceSummary("Rose, Jasmin, Rose"), "Rose ×2, Jasmin");
+});

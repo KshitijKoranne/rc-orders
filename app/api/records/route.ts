@@ -71,7 +71,7 @@ function orderItemValue(value: unknown, index: number) {
   return {
     id: requiredText(value.id, `order item ${index + 1} id`, 120),
     rCode: requiredText(value.rCode, `order item ${index + 1} R-code`, 40),
-    fragrance: textValue(value.fragrance ?? "", `order item ${index + 1} fragrance`, 40),
+    fragrance: textValue(value.fragrance ?? "", `order item ${index + 1} fragrance`, 2_000),
     unitPrice: integerValue(value.unitPrice, `order item ${index + 1} unit price`),
     product: requiredText(value.product, `order item ${index + 1} product`, 200),
     quantity: integerValue(value.quantity, `order item ${index + 1} quantity`, 1),
