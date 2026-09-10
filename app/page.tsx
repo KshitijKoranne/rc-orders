@@ -20,6 +20,8 @@ import {
   orderGoodsRevenue,
   orderProfit,
   marginPercent,
+  itemUnitCost,
+  freezeItemCosts,
   compareRCode,
   unitFragrances,
   storedFragrance,
@@ -50,6 +52,7 @@ type OrderItem = {
   product: string;
   quantity: number;
   amount: number;
+  cost?: number; // unit cost frozen when the order was saved
 };
 
 type Order = {
@@ -249,6 +252,7 @@ function migrateOrder(raw: RawOrder): Order {
       product: item.product || "",
       quantity: itemQuantity,
       amount: Number(item.amount) || itemUnitPrice * itemQuantity,
+      cost: item.cost === undefined ? undefined : Number(item.cost) || 0,
     };
   });
   const courierCharges = Number(raw.courierCharges) || 0;
@@ -653,7 +657,7 @@ export default function Home() {
     orders.forEach((order) => {
       if (order.orderStatus === "Cancelled") return;
       order.items.forEach((item) => {
-        const cost = (productCosts.get(item.rCode) ?? 0) * item.quantity;
+        const cost = itemUnitCost(item, productCosts) * item.quantity;
         const entry = tally.get(item.rCode) ?? {
           rCode: item.rCode,
           name: item.product,
@@ -701,6 +705,7 @@ export default function Home() {
         if (itemIndex !== index) return item;
         const next = { ...item, [field]: value };
         if (field === "rCode") {
+          next.cost = undefined; // a different product takes its own cost on save
           const product = productByCode.get(normalizeRCode(String(value)));
           if (product) {
             next.rCode = normalizeRCode(product.rCode);
@@ -840,6 +845,11 @@ export default function Home() {
 
     if (editingProductId) {
       setIsDirty(true);
+      const oldCost = Number(editedProduct?.cost) || 0;
+      if (oldRCode && oldCost !== cleanProduct.cost) {
+        // The new cost applies going forward; existing orders keep the old cost.
+        setOrders((current) => freezeItemCosts(current, oldRCode, oldCost));
+      }
       setProducts((current) =>
         current.map((product) =>
           product.id === editingProductId ? { ...product, ...cleanProduct } : product,
@@ -881,6 +891,8 @@ export default function Home() {
         quantity,
         unitPrice,
         amount: Number(item.amount) || unitPrice * quantity,
+        // Freeze today's cost on new items; an edited item keeps its saved cost.
+        cost: item.cost ?? (productCosts.get(normalizeRCode(item.rCode)) || undefined),
       };
     });
     const courierCharges = Number(orderForm.courierCharges) || 0;
@@ -1054,9 +1066,9 @@ export default function Home() {
         item.quantity,
         item.unitPrice,
         item.amount,
-        productCosts.get(item.rCode) ?? 0,
-        (productCosts.get(item.rCode) ?? 0) * item.quantity,
-        item.amount - (productCosts.get(item.rCode) ?? 0) * item.quantity,
+        itemUnitCost(item, productCosts),
+        itemUnitCost(item, productCosts) * item.quantity,
+        item.amount - itemUnitCost(item, productCosts) * item.quantity,
         order.courierCharges,
         order.amount,
         order.paid,

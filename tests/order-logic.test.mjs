@@ -56,3 +56,14 @@ test("keeps one fragrance per unit", async () => {
   assert.equal(storedFragrance(", ", 2), "");
   assert.equal(fragranceSummary("Rose, Jasmin, Rose"), "Rose ×2, Jasmin");
 });
+
+test("a cost change applies to new orders only", async () => {
+  const { orderCost, freezeItemCosts, costByRCode } = await import("../lib/order-logic.ts");
+  const old = [{ items: [{ rCode: "R-0001", quantity: 2, amount: 200 }] }];
+  const frozen = freezeItemCosts(old, "R-0001", 50);
+  const costs = costByRCode([{ rCode: "R-0001", cost: 60 }]);
+  assert.equal(orderCost(frozen[0].items, costs), 100); // old order keeps 50 each
+  assert.equal(orderCost([{ rCode: "R-0001", quantity: 2, amount: 200, cost: 60 }], costs), 120);
+  assert.equal(freezeItemCosts(old, "R-0001", 0), old); // no real cost yet: nothing frozen
+  assert.equal(freezeItemCosts(frozen, "R-0001", 70)[0].items[0].cost, 50); // never re-stamped
+});

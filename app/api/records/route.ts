@@ -76,6 +76,8 @@ function orderItemValue(value: unknown, index: number) {
     product: requiredText(value.product, `order item ${index + 1} product`, 200),
     quantity: integerValue(value.quantity, `order item ${index + 1} quantity`, 1),
     amount: integerValue(value.amount, `order item ${index + 1} amount`),
+    cost:
+      value.cost === undefined ? undefined : integerValue(value.cost, `order item ${index + 1} cost`),
   };
 }
 

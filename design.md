@@ -36,8 +36,9 @@ It still uses no decorative illustrations and no looping animation.
 - Dashboard is a derived overview from saved records. Orders remain the operational home for editing and filtering.
 - Dashboard metrics and charts must use real order data only: collected payments,
   open balances, order statuses, dated monthly totals, and derived profit.
-- Profit is derived, never stored. It reads the current catalogue cost by R-code.
-  A cost change therefore updates the profit of every order, old and new.
+- Profit is derived from each order item's frozen unit cost. An item keeps the catalogue
+  cost it was saved with, so a cost change applies to new orders only. Items with no
+  frozen cost use the catalogue cost until the first cost change stamps them.
 - Courier charges are excluded from profit on both sides. The customer pays them
   and the courier takes them, so they are not margin.
 - Keep R-code, customer, payment, status, due date, image, CSV, autosave, backup, and restore behaviour unchanged.

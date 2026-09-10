@@ -43,12 +43,34 @@ export function orderTotal(
 }
 
 /**
- * Profit is derived, not stored. A cost change in the catalogue
- * recalculates the profit of every order, old and new.
+ * Profit is derived from each item's frozen unit cost. An order item keeps the
+ * catalogue cost it was saved with, so a later cost change applies to new orders only.
+ * An item with no frozen cost (old orders, or cost not entered yet) uses the catalogue cost.
  * Courier charges are excluded on both sides: the customer pays them
  * and the courier takes them, so they are not margin.
  */
-export type ProfitItem = { rCode: string; quantity: number; amount: number };
+export type ProfitItem = { rCode: string; quantity: number; amount: number; cost?: number };
+
+export function itemUnitCost(item: { rCode: string; cost?: number }, costs: Map<string, number>) {
+  return item.cost ?? costs.get(item.rCode) ?? 0;
+}
+
+/** Before a catalogue cost changes, stamp the old cost on items that do not have one yet. */
+export function freezeItemCosts<T extends { items: Array<{ rCode: string; cost?: number }> }>(
+  orders: T[],
+  rCode: string,
+  oldCost: number,
+) {
+  if (oldCost <= 0) return orders; // no real cost yet: history takes the first cost entered
+  const code = normalizeRCode(rCode);
+  const needs = (item: { rCode: string; cost?: number }) =>
+    item.cost === undefined && normalizeRCode(item.rCode) === code;
+  return orders.map((order) =>
+    order.items.some(needs)
+      ? { ...order, items: order.items.map((item) => (needs(item) ? { ...item, cost: oldCost } : item)) }
+      : order,
+  );
+}
 
 export function costByRCode(products: Array<{ rCode: string; cost?: number }>) {
   const map = new Map<string, number>();
@@ -58,7 +80,7 @@ export function costByRCode(products: Array<{ rCode: string; cost?: number }>) {
 
 export function orderCost(items: ProfitItem[], costs: Map<string, number>) {
   return items.reduce(
-    (sum, item) => sum + (costs.get(item.rCode) ?? 0) * (Number(item.quantity) || 0),
+    (sum, item) => sum + itemUnitCost(item, costs) * (Number(item.quantity) || 0),
     0,
   );
 }
