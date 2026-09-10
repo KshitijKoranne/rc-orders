@@ -187,6 +187,11 @@ export async function GET(request: Request) {
 
   try {
     const db = await getDb();
+    // Read the revision before the records: if a save lands in between, this screen
+    // holds newer records with an older revision, and its next save is refused (safe side).
+    const [meta] = await db.execute<{ revision: number }>(
+      sql`SELECT revision FROM rithya_meta WHERE key = 'records'`,
+    );
     const productsPromise = includeImages
       ? db
           .select({
@@ -226,7 +231,7 @@ export async function GET(request: Request) {
     ]);
 
     return withSessionCookie(Response.json(
-      { products, orders: storedOrders.map(publicOrder) },
+      { products, orders: storedOrders.map(publicOrder), revision: meta?.revision ?? 0 },
       { headers: { "Cache-Control": "no-store" } },
     ), session, request);
   } catch (error) {
@@ -253,10 +258,22 @@ export async function PUT(request: Request) {
 
     const products = payload.products.map(productValue);
     const orders = payload.orders.map(orderValue);
+    // A missing revision (an old open tab) never matches, so that tab must reload.
+    const baseRevision = Number.isSafeInteger(payload.revision) ? Number(payload.revision) : -1;
     const db = await getDb();
+    let revision = 0;
 
     // ponytail: a full snapshot keeps the single-user app simple; split mutations only if usage grows beyond this small VPS workflow.
     await db.transaction(async (transaction) => {
+      // Compare-and-swap: the row lock makes a second save wait, then fail the check.
+      const [bumped] = await transaction.execute<{ revision: number }>(sql`
+        UPDATE rithya_meta SET revision = revision + 1
+        WHERE key = 'records' AND revision = ${baseRevision}
+        RETURNING revision
+      `);
+      if (!bumped) throw new Error("Stale records");
+      revision = bumped.revision;
+
       const storedProducts = await transaction
         .select({
           id: productsTable.id,
@@ -293,8 +310,11 @@ export async function PUT(request: Request) {
       if (orders.length) await transaction.insert(ordersTable).values(orders);
     });
 
-    return withSessionCookie(Response.json({ ok: true }), session, request);
+    return withSessionCookie(Response.json({ ok: true, revision }), session, request);
   } catch (error) {
+    if (error instanceof Error && error.message === "Stale records") {
+      return errorResponse("Records changed on another screen", 409);
+    }
     if (error instanceof Error && error.message.startsWith("Invalid")) {
       return errorResponse(error.message, 400);
     }

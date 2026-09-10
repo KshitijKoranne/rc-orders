@@ -88,6 +88,17 @@ async function ensureSchema(sql: SqlClient) {
     ALTER TABLE rithya_orders
     ADD COLUMN IF NOT EXISTS courier_charges integer NOT NULL DEFAULT 0
   `;
+  // One revision number for the whole record set. A save must name the revision it
+  // started from, so an older screen cannot overwrite newer records. Additive only.
+  await sql`
+    CREATE TABLE IF NOT EXISTS rithya_meta (
+      key text PRIMARY KEY,
+      revision integer NOT NULL DEFAULT 0
+    )
+  `;
+  await sql`
+    INSERT INTO rithya_meta (key) VALUES ('records') ON CONFLICT (key) DO NOTHING
+  `;
 }
 
 export async function getDb() {

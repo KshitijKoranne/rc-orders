@@ -296,6 +296,7 @@ export default function Home() {
   const imageUploadIdRef = useRef(0);
   const saveRequestRef = useRef(0);
   const saveChainRef = useRef(Promise.resolve());
+  const revisionRef = useRef(0);
   const imageViewerTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -410,11 +411,13 @@ export default function Home() {
         const payload = (await response.json()) as {
           products?: Product[];
           orders?: RawOrder[];
+          revision?: number;
         };
         if (!Array.isArray(payload.products) || !Array.isArray(payload.orders)) {
           throw new Error("Invalid records response");
         }
         if (!active) return;
+        revisionRef.current = Number(payload.revision) || 0;
         setProducts(payload.products);
         setOrders(payload.orders.map(migrateOrder));
         setDatabaseConnected(true);
@@ -458,9 +461,17 @@ export default function Home() {
             const response = await fetch("/api/records", {
               method: "PUT",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify(snapshot),
+              body: JSON.stringify({ ...snapshot, revision: revisionRef.current }),
             });
+            if (response.status === 409) {
+              // Another screen saved first. Stop here so this screen cannot overwrite it.
+              setDatabaseConnected(false);
+              setNotice("Records changed on another screen. Reload the page. Your last change is not saved.");
+              return;
+            }
             if (!response.ok) throw new Error("Could not save records");
+            const saved = (await response.json()) as { revision?: number };
+            revisionRef.current = Number(saved.revision) || 0;
             if (requestId === saveRequestRef.current) setIsDirty(false);
           } catch {
             if (requestId === saveRequestRef.current) {
@@ -816,6 +827,17 @@ export default function Home() {
       return;
     }
 
+    const editedProduct = products.find((product) => product.id === editingProductId);
+    const oldRCode = editedProduct ? normalizeRCode(editedProduct.rCode) : "";
+    if (
+      oldRCode &&
+      oldRCode !== cleanProduct.rCode &&
+      orders.some((order) => order.items.some((item) => normalizeRCode(item.rCode) === oldRCode))
+    ) {
+      setNotice(`Cannot change ${oldRCode}; it is used in an order. Add a new R-code instead.`);
+      return;
+    }
+
     if (editingProductId) {
       setIsDirty(true);
       setProducts((current) =>
@@ -892,6 +914,15 @@ export default function Home() {
       setNotice(
         `Add ${uncataloguedItem.rCode} to catalogue first so price is controlled.`,
       );
+      return;
+    }
+
+    if (
+      cleanOrder.paid > cleanOrder.amount &&
+      !window.confirm(
+        `Paid ${currency(cleanOrder.paid)} is more than the total ${currency(cleanOrder.amount)}. Save anyway?`,
+      )
+    ) {
       return;
     }
 
