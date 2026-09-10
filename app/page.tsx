@@ -818,8 +818,9 @@ export default function Home() {
       notes: productForm.notes.trim(),
     };
 
-    if (!cleanProduct.rCode || !cleanProduct.name || cleanProduct.price <= 0) {
-      setNotice("Enter R-code, product name, and price before saving.");
+    // Every R-code needs a real cost, so each order freezes a true cost from day one.
+    if (!cleanProduct.rCode || !cleanProduct.name || cleanProduct.price <= 0 || cleanProduct.cost <= 0) {
+      setNotice("Enter R-code, product name, cost, and price before saving.");
       return;
     }
 
@@ -1680,7 +1681,8 @@ export default function Home() {
                 <label htmlFor="catalogueCost">Cost to me</label>
                 <input
                   id="catalogueCost"
-                  min="0"
+                  required
+                  min="1"
                   type="number"
                   value={productForm.cost}
                   onChange={(event) =>
