@@ -543,7 +543,9 @@ export default function Home() {
         (queueFilter === "ready" && isActionable && order.orderStatus === "Ready") ||
         (queueFilter === "payment-due" && order.orderStatus !== "Cancelled" && order.amount > order.paid);
       return matchesSearch && matchesStatus && matchesQueue;
-    });
+    })
+      // ponytail: numeric string compare, no regex parse of RC-#### needed
+      .sort((left, right) => right.orderNo.localeCompare(left.orderNo, undefined, { numeric: true }));
   }, [orders, query, queueFilter, statusFilter]);
 
   const productCosts = useMemo(() => costByRCode(products), [products]);
