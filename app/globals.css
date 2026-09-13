@@ -2216,7 +2216,7 @@ body {
 
 .tab-nav {
   position: sticky;
-  top: 68px;
+  top: 87px; /* ponytail: header is 82px inner + 4px top border + 1px rule */
   z-index: 30;
   gap: var(--space-2xs);
   padding: var(--space-2xs);
@@ -2615,7 +2615,7 @@ body {
   }
 
   .tab-nav {
-    top: 60px;
+    top: 77px;
     border-radius: var(--radius-md);
   }
 
