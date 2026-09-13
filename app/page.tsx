@@ -1462,7 +1462,7 @@ export default function Home() {
                       <circle className="donut-track" cx="64" cy="64" r="52" />
                       {dashboardDonut.segments.map((segment) => (
                         <circle
-                          className={`donut-segment ${statusClass(segment.status)}`}
+                          className={`donut-segment status-${statusClass(segment.status)}`}
                           cx="64"
                           cy="64"
                           key={segment.status}
@@ -1482,7 +1482,7 @@ export default function Home() {
                   <ul className="status-legend">
                     {dashboardStatusCounts.map((segment) => (
                       <li key={segment.status}>
-                        <span aria-hidden="true" className={`status-dot ${statusClass(segment.status)}`} />
+                        <span aria-hidden="true" className={`status-dot status-${statusClass(segment.status)}`} />
                         <span>{segment.status}</span>
                         <strong>{segment.count}</strong>
                       </li>
