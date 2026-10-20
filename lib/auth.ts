@@ -9,7 +9,7 @@ type ParsedSession = {
   lastActivityAt: number;
   nonce: string;
   payload: string;
-  signature: Uint8Array;
+  signature: Uint8Array<ArrayBuffer>;
 };
 
 function configuredPassword() {

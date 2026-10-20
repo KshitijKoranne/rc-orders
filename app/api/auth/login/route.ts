@@ -5,13 +5,25 @@ import {
   passwordMatches,
   sessionCookieHeader,
 } from "../../../../lib/auth";
+import {
+  clearLoginFailures,
+  clientKey,
+  loginBlockedSeconds,
+  recordLoginFailure,
+} from "../../../../lib/login-throttle";
 
 export const runtime = "nodejs";
 
-function response(body: Record<string, string>, status: number, request: Request) {
+function response(
+  body: Record<string, string>,
+  status: number,
+  request: Request,
+  extraHeaders: Record<string, string> = {},
+) {
   return Response.json(body, {
     status,
     headers: {
+      ...extraHeaders,
       "Cache-Control": "no-store",
       "Set-Cookie": clearSessionCookieHeader(request),
     },
@@ -21,6 +33,14 @@ function response(body: Record<string, string>, status: number, request: Request
 export async function POST(request: Request) {
   if (!isPasswordConfigured()) {
     return response({ error: "Access password is not configured" }, 503, request);
+  }
+
+  const client = clientKey(request.headers);
+  const retryAfter = loginBlockedSeconds(client);
+  if (retryAfter > 0) {
+    return response({ error: "Too many attempts" }, 429, request, {
+      "Retry-After": String(retryAfter),
+    });
   }
 
   const contentLength = Number(request.headers.get("content-length") || 0);
@@ -37,9 +57,11 @@ export async function POST(request: Request) {
   }
 
   if (!(await passwordMatches(password))) {
+    recordLoginFailure(client);
     return response({ error: "Password not accepted" }, 401, request);
   }
 
+  clearLoginFailures(client);
   const session = await createSessionValue();
   if (!session) return response({ error: "Access password is not configured" }, 503, request);
 
