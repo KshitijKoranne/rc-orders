@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   derivePaymentStatus,
+  isCustomItem,
+  orderProfit,
+  costByRCode,
   isActiveOrderStatus,
   matchesRCodeSearch,
   normalizeRCode,
@@ -66,4 +69,11 @@ test("a cost change applies to new orders only", async () => {
   assert.equal(orderCost([{ rCode: "R-0001", quantity: 2, amount: 200, cost: 60 }], costs), 120);
   assert.equal(freezeItemCosts(old, "R-0001", 0), old); // no real cost yet: nothing frozen
   assert.equal(freezeItemCosts(frozen, "R-0001", 70)[0].items[0].cost, 50); // never re-stamped
+});
+
+test("custom item uses its own price and frozen cost, not the catalogue", () => {
+  assert.equal(isCustomItem({ rCode: "custom" }), true);
+  assert.equal(isCustomItem({ rCode: "R-0001" }), false);
+  const items = [{ rCode: "CUSTOM", quantity: 2, amount: 1000, cost: 300 }];
+  assert.equal(orderProfit(items, costByRCode([])), 400);
 });

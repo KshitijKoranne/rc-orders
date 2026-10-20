@@ -12,6 +12,13 @@ export function normalizeRCode(value: string) {
   return trimmed;
 }
 
+/** Order item that is not in the catalogue: name, price and cost are typed in by the owner. */
+export const CUSTOM_CODE = "CUSTOM";
+
+export function isCustomItem(item: { rCode: string }) {
+  return normalizeRCode(item.rCode) === CUSTOM_CODE;
+}
+
 export function matchesRCodeSearch(rCode: string, name: string, search: string) {
   const searchTerm = search.trim().toLowerCase();
   if (!searchTerm) return true;

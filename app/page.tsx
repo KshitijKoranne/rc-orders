@@ -26,6 +26,8 @@ import {
   unitFragrances,
   storedFragrance,
   fragranceSummary,
+  CUSTOM_CODE,
+  isCustomItem,
 } from "../lib/order-logic";
 import { originalProductImageUrl } from "../lib/image";
 
@@ -662,7 +664,7 @@ export default function Home() {
         const cost = itemUnitCost(item, productCosts) * item.quantity;
         const entry = tally.get(item.rCode) ?? {
           rCode: item.rCode,
-          name: item.product,
+          name: isCustomItem(item) ? "Custom orders" : item.product,
           profit: 0,
           units: 0,
         };
@@ -726,6 +728,12 @@ export default function Home() {
           next.unitPrice = product?.price ?? next.unitPrice;
           next.amount = unitPrice * Number(value || 1);
         }
+        if (field === "unitPrice") {
+          next.amount = (Number(value) || 0) * (Number(next.quantity) || 1);
+        }
+        if (field === "cost") {
+          next.cost = value === "" ? undefined : Number(value);
+        }
         return next;
       });
       return {
@@ -746,6 +754,16 @@ export default function Home() {
       items: [newItem, ...current.items],
     }));
     window.setTimeout(() => document.getElementById(`orderRCode-${newItem.id}`)?.focus(), 0);
+  }
+
+  function addCustomItem() {
+    const newItem = { ...makeEmptyOrderItem(), rCode: CUSTOM_CODE };
+    setOrderForm((current) => {
+      // An untouched first row becomes the custom item instead of staying behind empty.
+      const blank = current.items.length === 1 && !current.items[0].rCode && !current.items[0].product;
+      return { ...current, items: blank ? [newItem] : [newItem, ...current.items] };
+    });
+    window.setTimeout(() => document.getElementById(`product-${newItem.id}`)?.focus(), 0);
   }
 
   function removeOrderItem(id: string) {
@@ -922,8 +940,15 @@ export default function Home() {
       setNotice("Enter an R-code for every item before saving the order.");
       return;
     }
+    const incompleteCustom = cleanOrder.items.find(
+      (item) => isCustomItem(item) && (!item.product || item.unitPrice <= 0 || !(Number(item.cost) > 0)),
+    );
+    if (incompleteCustom) {
+      setNotice("A custom item needs a name, a price and a cost.");
+      return;
+    }
     const uncataloguedItem = cleanOrder.items.find(
-      (item) => !productByCode.has(item.rCode),
+      (item) => !isCustomItem(item) && !productByCode.has(item.rCode),
     );
     if (uncataloguedItem) {
       setNotice(
@@ -1824,9 +1849,14 @@ export default function Home() {
                       <span className="section-kicker">Items</span>
                       <h3>Order items</h3>
                     </div>
-                    <button className="secondary-button" onClick={addOrderItem} type="button">
-                      + Add item
-                    </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                      <button className="secondary-button" onClick={addCustomItem} type="button">
+                        + Custom item
+                      </button>
+                      <button className="secondary-button" onClick={addOrderItem} type="button">
+                        + Add item
+                      </button>
+                    </div>
                   </div>
 
                   <div className="order-items-list">
@@ -1847,6 +1877,22 @@ export default function Home() {
                             )}
                           </div>
 
+                          {isCustomItem(item) ? (
+                            <div className="selected-product-card">
+                              <ProductImage product={{ rCode: CUSTOM_CODE }} />
+                              <div>
+                                <span className="selected-product-label">Custom order</span>
+                                <strong>{item.product || "Name and price set by you"}</strong>
+                                <button
+                                  className="secondary-button"
+                                  onClick={() => updateOrderItem(index, "rCode", "")}
+                                  type="button"
+                                >
+                                  Use an R-code instead
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
                           <div className="form-grid code-row">
                             <div className="field">
                               <label htmlFor={`orderRCode-${item.id}`}>R-code</label>
@@ -1868,6 +1914,7 @@ export default function Home() {
                               </div>
                             </div>
                           </div>
+                          )}
 
                           <div className="form-grid two-up">
                             <div className="field">
@@ -1880,7 +1927,7 @@ export default function Home() {
                                 onChange={(event) =>
                                   updateOrderItem(index, "product", event.target.value)
                                 }
-                                placeholder="Choose an R-code first"
+                                placeholder={isCustomItem(item) ? "What is this order?" : "Choose an R-code first"}
                               />
                             </div>
                             <div className="field">
@@ -1942,8 +1989,13 @@ export default function Home() {
                               <input
                                 id={`unitPrice-${item.id}`}
                                 inputMode="numeric"
-                                readOnly
+                                min="0"
+                                type={isCustomItem(item) ? "number" : undefined}
+                                readOnly={!isCustomItem(item)}
                                 value={item.unitPrice}
+                                onChange={(event) =>
+                                  updateOrderItem(index, "unitPrice", numericInputValue(event.target.value))
+                                }
                               />
                             </div>
                             <div className="field">
@@ -1964,6 +2016,25 @@ export default function Home() {
                               />
                             </div>
                           </div>
+
+                          {isCustomItem(item) && (
+                            <div className="form-grid two-up">
+                              <div className="field">
+                                <label htmlFor={`cost-${item.id}`}>Cost per unit</label>
+                                <input
+                                  id={`cost-${item.id}`}
+                                  inputMode="numeric"
+                                  min="1"
+                                  type="number"
+                                  value={item.cost ?? ""}
+                                  onChange={(event) =>
+                                    updateOrderItem(index, "cost", numericInputValue(event.target.value))
+                                  }
+                                  placeholder="Your cost, for profit"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </article>
                       );
                     })}
@@ -2394,7 +2465,8 @@ function ProductImage({
       image
     );
   }
-  return <div className="product-image empty-image">{product?.rCode || "R"}</div>;
+  const label = product?.rCode === CUSTOM_CODE ? "C" : product?.rCode || "R";
+  return <div className="product-image empty-image">{label}</div>;
 }
 
 function RCodePicker({
